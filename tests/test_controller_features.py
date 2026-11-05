@@ -24,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from PySide6.QtCore import QCoreApplication, QEvent, QTimer
 from PySide6.QtGui import QDesktopServices, QKeySequence
-from PySide6.QtWidgets import QApplication, QLabel, QMessageBox
+from PySide6.QtWidgets import QApplication, QDialog, QLabel, QMessageBox
 
 _qapp = QApplication.instance() or QApplication([])
 
@@ -1419,6 +1419,131 @@ class ControllerFeatureTest(unittest.TestCase):
             self.assertEqual(calls, [1])
         finally:
             dlg.close()
+            self._reset()
+
+    # ── 已完成列：拖拽语义 / 批量归档 / 自动归档 ──────────────
+
+    def _ensure_list(self, title: str) -> BoardList:
+        """取（或补建）指定标题的列表——类级共享控制器可能被前序用例改过"""
+        board = self.c._store.load()
+        lst = next((x for x in board.lists if x.title == title), None)
+        if lst is None:
+            lst = BoardList(title=title)
+            board.lists.append(lst)
+            self.c._after_data_change(None)
+        return lst
+
+    def test_move_into_done_list_marks_done(self):
+        """拖进「已完成」列 = 完成（勾选框移除后的鼠标完成路径）"""
+        self._reset()
+        todo = self._ensure_list("待办")
+        done = self._ensure_list("已完成")
+        self.c._on_card_add(todo.id, "拖拽完成")
+        card_id = next(c.id for c in todo.cards if c.title == "拖拽完成")
+
+        self.c._on_card_move(card_id, done.id, 0)
+        moved = self.c._store.load().find_card(card_id)[1]
+        self.assertTrue(moved.done)
+        self.assertIsNotNone(moved.done_at)   # 自动归档依赖完成时刻
+
+        self.c._on_card_move(card_id, todo.id, 0)
+        back = self.c._store.load().find_card(card_id)[1]
+        self.assertFalse(back.done)
+        self.assertIsNone(back.done_at)
+        self._reset()
+
+    def test_auto_archive_old_done_cards(self):
+        """完成超过 N 天的卡片自动归档；未到期/未完成的不动"""
+        self._reset()
+        todo = self._ensure_list("待办")
+        today = date.today()
+        old = Card(title="旧完成", done=True)
+        old.done_at = (today - timedelta(days=5)).isoformat() + "T09:00:00"
+        recent = Card(title="新完成", done=True)
+        recent.done_at = (today - timedelta(days=1)).isoformat() + "T09:00:00"
+        pending = Card(title="未完成")
+        pending.done_at = (today - timedelta(days=9)).isoformat() + "T09:00:00"
+        todo.cards.extend([old, recent, pending])
+        self.c._after_data_change(None)
+
+        try:
+            AppConfig.save_auto_archive_days(3)
+            n = self.c._auto_archive_completed(notify=False)
+            self.assertEqual(n, 1)
+            self.assertTrue(old.archived)
+            self.assertFalse(recent.archived)
+            self.assertFalse(pending.archived)
+            # 一步撤销：整批回到看板
+            self.c._on_undo_requested(False)
+            board = self.c._store.load()
+            self.assertFalse(board.find_card(old.id)[1].archived)
+        finally:
+            AppConfig.save_auto_archive_days(0)
+            self._reset()
+
+    def test_auto_archive_disabled_noop(self):
+        """阈值 0（关闭）时即使完成很久也不归档"""
+        self._reset()
+        todo = self._ensure_list("待办")
+        card = Card(title="很久以前完成", done=True)
+        card.done_at = (date.today() - timedelta(days=90)).isoformat() + "T09:00:00"
+        todo.cards.append(card)
+        self.c._after_data_change(None)
+        try:
+            AppConfig.save_auto_archive_days(0)
+            self.assertEqual(self.c._auto_archive_completed(notify=False), 0)
+            self.assertFalse(card.archived)
+        finally:
+            self._reset()
+
+    def test_auto_archive_skips_cards_without_done_at(self):
+        """缺 done_at 的历史卡片不参与（避免启用即扫走旧数据）"""
+        self._reset()
+        todo = self._ensure_list("待办")
+        legacy = Card(title="无完成时间", done=True)
+        todo.cards.append(legacy)
+        self.c._after_data_change(None)
+        try:
+            AppConfig.save_auto_archive_days(1)
+            self.assertEqual(self.c._auto_archive_completed(notify=False), 0)
+            self.assertFalse(legacy.archived)
+        finally:
+            AppConfig.save_auto_archive_days(0)
+            self._reset()
+
+    def test_batch_archive_dialog_archives_selected(self):
+        """已完成列批量归档：只归档对话框勾选的卡片，可撤销"""
+        self._reset()
+        done = self._ensure_list("已完成")
+        keep = Card(title="留着的", done=True)
+        pick = Card(title="归档的", done=True)
+        done.cards.extend([keep, pick])
+        self.c._after_data_change(None)
+
+        class _StubDialog:
+            def __init__(self, cards, parent=None):
+                self._ids = [c.id for c in cards if c.title == "归档的"]
+
+            def exec(self):
+                return QDialog.Accepted
+
+            def selected_ids(self):
+                return list(self._ids)
+
+            def deleteLater(self):
+                pass
+
+        try:
+            with patch("app.views.batch_archive_dialog.BatchArchiveDialog",
+                       _StubDialog):
+                self.c._on_batch_archive_dialog(done.id)
+            self.assertTrue(pick.archived)
+            self.assertFalse(keep.archived)
+            self.c._on_undo_requested(False)
+            # 撤销会整体替换模型对象：按 id 重新取
+            restored = self.c._store.load().find_card(pick.id)[1]
+            self.assertFalse(restored.archived)
+        finally:
             self._reset()
 
     # ── 导出 ──────────────────────────────────────────────

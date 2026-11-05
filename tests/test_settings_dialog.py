@@ -196,6 +196,27 @@ class SettingsDialogTest(unittest.TestCase):
         self.dlg._pet_toggle.click()
         self.assertEqual(hits, [False, True])
 
+    def test_auto_archive_options_and_signal(self):
+        """已完成自动归档：选项覆盖 关闭 + 各阈值，点选发天数信号"""
+        self.assertEqual(
+            set(self.dlg._auto_archive_combo.itemData(i)
+                for i in range(self.dlg._auto_archive_combo.count())),
+            set(AppConfig.AUTO_ARCHIVE_DAYS))
+        hits: list[int] = []
+        self.dlg.signal_auto_archive_changed.connect(hits.append)
+        idx = self.dlg._auto_archive_combo.findData(7)
+        self.dlg._auto_archive_combo.setCurrentIndex(idx)
+        self.assertEqual(hits, [7])
+
+    def test_auto_archive_synced_from_pref_and_silent(self):
+        """打开设置时回填真实阈值且不发信号（与提醒提前量同范式）"""
+        hits: list[int] = []
+        self.dlg.signal_auto_archive_changed.connect(hits.append)
+        self.dlg.sync_from_prefs("system", "zh", "milk", True, True,
+                                 auto_archive_days=14)
+        self.assertEqual(self.dlg._auto_archive_combo.currentData(), 14)
+        self.assertEqual(hits, [])
+
     def test_retexts_in_english(self):
         i18n.set_lang("en")
         self.dlg.retexts()

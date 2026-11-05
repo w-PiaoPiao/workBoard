@@ -8,15 +8,17 @@
 from __future__ import annotations
 
 import logging
+import math
 
-from PySide6.QtCore import (QPointF, QEasingCurve, QEvent, QRectF, Qt,
+from PySide6.QtCore import (QPointF, QEasingCurve, QEvent, QRect, QRectF, Qt,
                             QVariantAnimation, Signal)
-from PySide6.QtGui import QColor, QPainter, QPen
+from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import (QAbstractButton, QButtonGroup, QComboBox,
                                QDateEdit, QFrame, QHBoxLayout, QPushButton,
                                QSpinBox)
 
 from app.config import AppConfig
+from app.i18n import tr
 from app.views import motion, tokens
 from app.views.theme import AppTheme, to_qcolor
 
@@ -412,3 +414,175 @@ class SegmentedControl(QFrame):
     def reapply_theme(self) -> None:
         # 样式表由 SettingsDialog 统一下发（子控件继承），此处仅重绘
         self.update()
+
+
+class CardCheckButton(QPushButton):
+    """自绘勾选框（替代 ☐/☑ 字形，跨平台渲染一致）
+
+    完成瞬间对勾按路径描画（140ms）：勾选完成是最高频的正反馈动作，
+    瞬时划线的满足感不足；描画进度由 _check_progress 驱动，可被
+    "暂停动画"开关跳过。
+    """
+
+    _P0 = (3.6, 8.2)     # 对勾折点序列（相对勾选框左上角）
+    _P1 = (7.0, 11.4)
+    _P2 = (12.6, 4.6)
+    # 两段折线长度为常量（P 序列恒定）：paintEvent 每帧 math.hypot 纯浪费
+    _P01 = math.hypot(_P1[0] - _P0[0], _P1[1] - _P0[1])
+    _P12 = math.hypot(_P2[0] - _P1[0], _P2[1] - _P1[1])
+
+    # 完整对勾路径缓存（(0,0) 原点，绘制时 translate 到框左上角）：
+    # 完成态 progress 恒为 1，逐帧新建 QPainterPath 纯重复
+    _CHECK_PATH_FULL: QPainterPath | None = None
+
+    # 对勾色：压在 success 填充上。深色主题的 success 是亮绿，白对勾只有
+    # 1.99:1——勾选框的整个意义就是那个对勾，却在深色下几乎看不见。
+    # 与主按钮同思路：填充亮时文字反相。
+    @staticmethod
+    def _check_color() -> QColor:
+        return QColor(AppTheme.colors()["success_on"])
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFlat(True)
+        # 命中区 24×24（可点击标准），视觉勾选框仍是 16px 居中绘制——
+        # 这是全板最高频的操作，此前 20×20 是整个界面上最小的目标之一
+        self.setFixedSize(24, 24)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setToolTip(tr("点击切换完成状态"))
+        # 可 check：QPushButton 不可 check 时读屏只报 "button"，
+        # 永远不报勾选状态——完成与否只由删除线和绿底承载，非视觉用户
+        # 拿不到这个信息。setCheckable 让 QAccessible 暴露 checked。
+        self.setCheckable(True)
+        self.setAccessibleName(tr("切换完成状态"))
+        self._done = False
+        self._check_anim: QVariantAnimation | None = None
+        self._check_progress = 1.0   # 对勾描画进度 0..1（1=完整对勾）
+
+    def retexts(self) -> None:
+        """语言切换：读屏名与 tooltip 是构造期定格的，需要重设"""
+        self.setToolTip(tr("点击切换完成状态"))
+        self.setAccessibleName(tr("切换完成状态"))
+
+    def enterEvent(self, event) -> None:
+        """悬停变色必须自己请求重绘
+
+        paintEvent 里按 `underMouse()` 取 accent 色，但没有 enter/leave
+        时不会有人来触发重绘——悬停高亮要等别的控件恰好让本卡重画才出现，
+        而这是全板最高频的操作，反馈不能是"看运气"。
+        """
+        super().enterEvent(event)
+        self.update()
+
+    def leaveEvent(self, event) -> None:
+        super().leaveEvent(event)
+        self.update()
+
+    def set_done(self, done: bool) -> None:
+        if self._done == done:
+            return
+        self._done = done
+        self.setChecked(done)       # 同步给无障碍层
+        self.update()
+        if done and motion.enabled():
+            self._start_check_anim()
+        else:
+            self._stop_check_anim()
+
+    def _start_check_anim(self) -> None:
+        self._stop_check_anim()
+        anim = QVariantAnimation(self)
+        anim.setDuration(140)
+        anim.setStartValue(0.0)
+        anim.setEndValue(1.0)
+        anim.setEasingCurve(QEasingCurve.OutCubic)
+        anim.valueChanged.connect(self._on_check_tick)
+        anim.finished.connect(lambda: self._stop_check_anim())
+        self._check_anim = anim
+        self._check_progress = 0.0
+        anim.start()
+
+    def _stop_check_anim(self) -> None:
+        anim = self._check_anim
+        if anim is not None:
+            anim.stop()
+            anim.deleteLater()
+            self._check_anim = None
+        self._check_progress = 1.0
+        self.update()
+
+    def _on_check_tick(self, value) -> None:
+        self._check_progress = float(value)
+        self.update()
+
+    def paintEvent(self, event) -> None:
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        c = AppTheme.colors()
+        box = QRect((self.width() - 16) // 2, (self.height() - 16) // 2, 16, 16)
+        # 勾选框外形随皮肤：rounded 圆角方框（默认）/ square 直角方框
+        # （终端、粗野：这两个皮肤里任何圆角都会显得"没换干净"）。
+        radius = 4.5 if AppTheme.shape()["check_style"] != "square" else 0.0
+        if self._done:
+            # 完成：主题色填充 + 对勾（按描画进度截取路径）
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(QColor(c["success"]))
+            painter.drawRoundedRect(box, radius, radius)
+            # 对勾色随主题：深色的 success 是亮绿，白对勾只有 1.99:1
+            pen = _CHECK_PENS.get(c["success_on"])
+            if pen is None:
+                pen = QPen(self._check_color(), 1.8)
+                pen.setCapStyle(Qt.RoundCap)
+                pen.setJoinStyle(Qt.RoundJoin)
+                _CHECK_PENS[c["success_on"]] = pen
+            painter.setPen(pen)
+            total = self._P01 + self._P12
+            d = self._check_progress * total
+            if d >= total:
+                # 动画结束后的常态：直接用缓存完整路径
+                if CardCheckButton._CHECK_PATH_FULL is None:
+                    path = QPainterPath(QPointF(*CardCheckButton._P0))
+                    path.lineTo(QPointF(*CardCheckButton._P1))
+                    path.lineTo(QPointF(*CardCheckButton._P2))
+                    CardCheckButton._CHECK_PATH_FULL = path
+                painter.save()
+                painter.translate(box.topLeft())
+                painter.drawPath(CardCheckButton._CHECK_PATH_FULL)
+                painter.restore()
+            else:
+                bx, by = box.left(), box.top()
+                p0 = QPointF(bx + self._P0[0], by + self._P0[1])
+                p1 = QPointF(bx + self._P1[0], by + self._P1[1])
+                p2 = QPointF(bx + self._P2[0], by + self._P2[1])
+                path = QPainterPath()
+                path.moveTo(p0)
+                if d <= self._P01:
+                    t = (d / self._P01) if self._P01 > 0 else 1.0
+                    path.lineTo(p0 + (p1 - p0) * t)
+                else:
+                    t = ((d - self._P01) / self._P12) if self._P12 > 0 else 1.0
+                    path.lineTo(p1)
+                    path.lineTo(p1 + (p2 - p1) * t)
+                painter.drawPath(path)
+        else:
+            # 未完成：圆角方框，悬停变主题色
+            # 未完成：圆角方框，悬停变主题色
+            hex_color = c["accent"] if self.underMouse() else c["text_disabled"]
+            pen = _CHECK_BOX_PENS.get(hex_color)
+            if pen is None:
+                pen = QPen(QColor(hex_color), 1.5)
+                _CHECK_BOX_PENS[hex_color] = pen
+            painter.setPen(pen)
+            painter.setBrush(Qt.NoBrush)
+            painter.drawRoundedRect(box, radius, radius)
+        painter.end()
+
+
+# 完成态对勾画笔按颜色缓存：颜色随主题变（success_on），
+# 每帧新建 QPen + 设 cap/join 是纯重复；QPen 值语义，多控件共享安全
+_CHECK_PENS: dict = {}
+
+# 未完成态勾选框画笔按颜色 hex 缓存：paintEvent 每帧新建 QPen 纯重复
+# （hex 键随主题切换自动换 key，同 _CHECK_PEN 的类常量范式，但颜色取自
+# 主题调色板，不能一次性定为类常量）
+_CHECK_BOX_PENS: dict[str, QPen] = {}

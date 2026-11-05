@@ -35,7 +35,13 @@ from app import i18n
 from app.config import AppConfig, workdir_start_dir
 from app.i18n import priority_name, tr
 from app.models import json_io
-from app.models.board import Board, BoardList, BoardStore, Card
+from app.models.board import (
+    Board,
+    BoardList,
+    BoardStore,
+    Card,
+    is_done_list_title,
+)
 from app.models.importers import board_from_markdown, board_from_trello
 from app.models.quick_syntax import parse_quick_input
 from app.models.workspace import Workspace
@@ -145,6 +151,8 @@ class AppController(QObject):
         self._pending_undo_doc: dict | None = None
         self._today_popover: TodayPopover | None = None   # 今日清单浮窗（惰性创建）
         self._ui_day = date.today()   # 日相关视图的渲染日期（跨天检测基线）
+        # 已完成自动归档的当日扫描标记：每天最多扫一次（启动与跨天共用）
+        self._auto_archive_day: date | None = None
         self._due_timer = QTimer(self)
         self._due_timer.setInterval(AppConfig.DUE_CHECK_INTERVAL_MS)
         self._due_timer.timeout.connect(self._on_date_check)
@@ -840,6 +848,9 @@ class AppController(QObject):
         self._board_view.signal_batch_label.connect(self._on_batch_label)
         self._board_view.signal_batch_delete.connect(self._on_batch_delete)
         self._board_view.signal_batch_archive.connect(self._on_batch_archive)
+        # 已完成列 ⋯ 菜单「批量归档…」：勾选式批量归档对话框
+        self._board_view.signal_batch_archive_dialog.connect(
+            self._on_batch_archive_dialog)
         self._board_view.signal_list_collapsed.connect(self._on_list_collapsed)
         self._board_view.signal_list_fund_watch.connect(
             self._on_list_fund_watch)
@@ -1434,7 +1445,25 @@ class AppController(QObject):
             return
         if target.fund_watch and moved.fund is None:
             moved.ensure_fund()   # 拖入资金监视泳道的普通卡自动补配置
+        self._sync_done_with_column(moved, src_list.title, target.title)
         self._after_data_change(None)
+
+    @staticmethod
+    def _sync_done_with_column(card: Card, src_title: str,
+                               target_title: str) -> None:
+        """拖入/拖出「已完成」列 = 完成/取消完成
+
+        卡片标题前的勾选框移除后，"把卡拖进已完成列"就是鼠标侧最自然的
+        完成动作：这里按列名判定同步 done（并维护 done_at，供自动归档与
+        周统计使用）。只处理"进入/离开完成列"两种迁移——在普通列之间重排
+        不碰 done，否则一张在对话框里标成完成的卡只因为挪了下位置就被改回
+        未完成。
+        """
+        if is_done_list_title(target_title):
+            if not card.done:
+                card.set_done(True)
+        elif is_done_list_title(src_title) and card.done:
+            card.set_done(False)
 
     # ── 卡片复制 / 附件 / 批量操作（多选） ─────────────────
 
@@ -1481,10 +1510,12 @@ class AppController(QObject):
             return
         wanted = set(card_ids)
         moving: list[Card] = []
+        sources: dict[str, str] = {}   # card_id → 来源列表标题（判定拖出完成列）
         for lst in board.lists:
             for card in lst.cards:
                 if card.id in wanted and not card.archived:
                     moving.append(card)
+                    sources[card.id] = lst.title
         if not moving:
             return
         # 落点用"锚卡片"表达而不是裸下标：落点是"插到当时第 index 张之前"，
@@ -1512,6 +1543,9 @@ class AppController(QObject):
             for card in moving:
                 if card.fund is None:
                     card.ensure_fund()
+        for card in moving:
+            self._sync_done_with_column(
+                card, sources.get(card.id, ""), target.title)
         self._after_data_change(
             tr("已移动 {n} 张卡片").format(n=len(moving)))
 
@@ -1630,6 +1664,41 @@ class AppController(QObject):
             self._undo_stack.pop()
             return
         self._after_data_change(tr("已归档 {n} 张卡片").format(n=n))
+
+    def _on_batch_archive_dialog(self, list_id: str) -> None:
+        """已完成列「⋯ → 批量归档…」：勾选后一次归档（一步撤销）"""
+        from app.views.batch_archive_dialog import BatchArchiveDialog
+
+        board = self._store.load()
+        lst = board.find_list(list_id)
+        if lst is None:
+            return
+        cards = [c for c in lst.cards if c.done and not c.archived]
+        if not cards:
+            self._notify(tr("这列没有可归档的已完成卡片"))
+            return
+        dlg = BatchArchiveDialog(cards, parent=self._window)
+        accepted = dlg.exec() == QDialog.Accepted
+        chosen = dlg.selected_ids()
+        dlg.deleteLater()
+        if not accepted or not chosen:
+            return
+        board = self._store.load()
+        self._push_undo()
+        n = 0
+        for cid in chosen:
+            _lst, card = board.find_card(cid)
+            if card is None or card.archived:
+                continue
+            card.archived = True
+            n += 1
+        if self._pomo_card_id in chosen:
+            self._pomo_stop()
+        if n == 0:
+            self._undo_stack.pop()
+            return
+        self._after_data_change(
+            tr("已归档 {n} 张已完成卡片").format(n=n))
 
     # ── 日历视图 ──────────────────────────────────────────
 
@@ -2023,6 +2092,8 @@ class AppController(QObject):
             dlg.signal_autostart_toggled.connect(self._on_autostart_toggled)
             dlg.signal_remind_advance_changed.connect(
                 AppConfig.save_remind_advance)
+            dlg.signal_auto_archive_changed.connect(
+                self._on_auto_archive_days_changed)
             dlg.signal_default_view_selected.connect(
                 AppConfig.save_default_view)
             dlg.signal_global_hotkey_toggled.connect(
@@ -2128,6 +2199,7 @@ class AppController(QObject):
             animation=AppConfig.get_animation_enabled(),
             always_top=self._window.is_always_on_top(),
             remind_advance=AppConfig.get_remind_advance(),
+            auto_archive_days=AppConfig.get_auto_archive_days(),
             autostart=self._autostart_state(),
             default_view=AppConfig.get_default_view(),
             pet_enabled=self._window.is_pet_enabled(),
@@ -2532,6 +2604,7 @@ class AppController(QObject):
         """
         self._refresh_if_new_day()
         self._check_due_dates()
+        self._auto_archive_if_due()
 
     def _refresh_if_new_day(self) -> None:
         """跨天刷新：日相关的内容全是渲染时快照，进程不重启就永不更新
@@ -2569,6 +2642,72 @@ class AppController(QObject):
                 json_io.snapshot_board(self._store.path, has_cards=True)
             except OSError as e:
                 logger.warning("每日快照失败: %s", e)
+
+    # ── 已完成自动归档 ─────────────────────────────────────
+
+    def _auto_archive_if_due(self) -> None:
+        """每天最多扫一次待归档卡片（启动与跨天共用同一条路径）
+
+        应用常驻托盘，跨天时不重启也会走到这里（_on_date_check 每分钟一次，
+        但当日扫描标记保证真正的全板扫描每天只做一次）。归档后给一条轻提示：
+        卡片"凭空消失"比一次可撤销的 toast 更让人不安。
+        """
+        today = date.today()
+        if self._auto_archive_day == today:
+            return
+        self._auto_archive_day = today
+        self._auto_archive_completed(notify=True)
+
+    def _auto_archive_completed(self, notify: bool = True,
+                                today: date | None = None) -> int:
+        """把完成超过 N 天的卡片移入归档；返回归档张数
+
+        判定用 done_at 的日期部分（勾选完成/拖入完成列时写入）。没有
+        done_at 的历史卡片不参与——自动归档一旦启用就大批扫走旧数据，
+        风险远大于收益。设置 0（关闭）时直接返回。
+        """
+        days = AppConfig.get_auto_archive_days()
+        if days <= 0:
+            return 0
+        today = today or date.today()
+        cutoff = today - timedelta(days=days)
+        board = self._store.load()
+        targets: list[Card] = []
+        for lst in board.lists:
+            for card in lst.cards:
+                if card.archived or not card.done:
+                    continue
+                done_day = self._card_done_day(card)
+                if done_day is not None and done_day <= cutoff:
+                    targets.append(card)
+        if not targets:
+            return 0
+        self._push_undo()
+        for card in targets:
+            card.archived = True
+        if self._pomo_card_id in {c.id for c in targets}:
+            self._pomo_stop()
+        self._after_data_change(
+            tr("已自动归档 {n} 张已完成卡片").format(n=len(targets))
+            if notify else None)
+        return len(targets)
+
+    @staticmethod
+    def _card_done_day(card: Card) -> date | None:
+        """卡片完成日期：done_at 前 10 位按 ISO 解析；损坏/缺失返回 None"""
+        raw = (card.done_at or "").strip()
+        if len(raw) < 10:
+            return None
+        try:
+            return date.fromisoformat(raw[:10])
+        except ValueError:
+            return None
+
+    def _on_auto_archive_days_changed(self, days: int) -> None:
+        """设置页改「已完成自动归档」天数：落盘并按新阈值立即扫一次"""
+        AppConfig.save_auto_archive_days(days)
+        self._auto_archive_day = date.today()   # 当日扫描标记：避免分钟级重复扫
+        self._auto_archive_completed(notify=True)
 
     # ── 截止提醒 ──────────────────────────────────────────
 

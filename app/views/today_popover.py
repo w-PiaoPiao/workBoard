@@ -27,7 +27,7 @@ from app.config import AppConfig
 from app.i18n import tr
 from app.models.board import BoardList, Card
 from app.views import icons, motion, tokens
-from app.views.board_view import _CardCheckButton
+from app.views.controls import CardCheckButton
 from app.views.theme import AppTheme
 
 _ROW_MIN_H = 42
@@ -139,7 +139,7 @@ class _PopRow(QFrame):
         lay.setContentsMargins(8, 4, 8, 4)
         lay.setSpacing(6)
 
-        self._check = _CardCheckButton()
+        self._check = CardCheckButton()
         self._check.clicked.connect(self._emit_done)
         lay.addWidget(self._check)
 

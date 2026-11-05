@@ -161,6 +161,7 @@ class SettingsDialog(QDialog):
     signal_pet_enabled_toggled = Signal(bool)  # 桌宠显示总开关
     signal_always_top_toggled = Signal(bool)
     signal_remind_advance_changed = Signal(int)  # 截止提前提醒天数 0~3
+    signal_auto_archive_changed = Signal(int)    # 已完成自动归档天数 0=关闭
     signal_autostart_toggled = Signal(bool)      # 开机自启动
     signal_global_hotkey_toggled = Signal(bool)  # 全局快捷键（仅 Windows）
 
@@ -350,6 +351,19 @@ class SettingsDialog(QDialog):
 
         # 数据
         self._sec_data = _Section(tr("数据"))
+        # 已完成自动归档：看板常驻时完成列只增不减，设阈值自动清理
+        # （0=关闭，不替用户动数据）
+        self._auto_archive_combo = ComboBox()
+        self._auto_archive_combo.setCursor(Qt.PointingHandCursor)
+        for label, value in self._auto_archive_labels():
+            self._auto_archive_combo.addItem(label, value)
+        self._auto_archive_combo.currentIndexChanged.connect(
+            lambda idx: self.signal_auto_archive_changed.emit(
+                int(self._auto_archive_combo.itemData(idx) or 0)))
+        self._t_auto_archive, self._h_auto_archive = self._sec_data.add_row(
+            tr("已完成自动归档"),
+            tr("完成超过 N 天的卡片自动移入归档（可随时恢复）"),
+            self._auto_archive_combo)
         self._dir_open_btn = QPushButton(tr("打开目录"))
         self._dir_open_btn.setObjectName("ghostBtn")
         self._dir_open_btn.setCursor(Qt.PointingHandCursor)
@@ -393,9 +407,17 @@ class SettingsDialog(QDialog):
 
     # ── 对外 ──────────────────────────────────────────────
 
+    @staticmethod
+    def _auto_archive_labels() -> list[tuple[str, int]]:
+        """自动归档下拉的 (文案, 天数) 序列（构造与语言切换共用一份）"""
+        return [(tr("关闭"), 0)] + [
+            (tr("{n} 天后自动归档").format(n=n), n)
+            for n in AppConfig.AUTO_ARCHIVE_DAYS if n > 0]
+
     def sync_from_prefs(self, theme_mode: str, lang: str, skin: str,
                         animation: bool, always_top: bool,
                         remind_advance: int = 0,
+                        auto_archive_days: int = 0,
                         autostart: bool = False,
                         default_view: str = "pet",
                         pet_enabled: bool = True,
@@ -412,7 +434,7 @@ class SettingsDialog(QDialog):
         """
         silent = (self._pet_toggle, self._anim_toggle, self._top_toggle,
                   self._autostart_toggle, self._remind_combo,
-                  self._hotkey_toggle)
+                  self._auto_archive_combo, self._hotkey_toggle)
         prev = [w.blockSignals(True) for w in silent]
         try:
             self._theme_seg.set_value(theme_mode)
@@ -430,6 +452,9 @@ class SettingsDialog(QDialog):
             idx = self._remind_combo.findData(int(remind_advance))
             if idx >= 0:
                 self._remind_combo.setCurrentIndex(idx)
+            idx = self._auto_archive_combo.findData(int(auto_archive_days))
+            if idx >= 0:
+                self._auto_archive_combo.setCurrentIndex(idx)
         finally:
             for w, was in zip(silent, prev):
                 w.blockSignals(was)
@@ -526,6 +551,11 @@ class SettingsDialog(QDialog):
                  (2, tr("提前 2 天")), (3, tr("提前 3 天")))):
             self._remind_combo.setItemText(idx, label)
         self._sec_data.retexts(tr("数据"))
+        self._t_auto_archive.setText(tr("已完成自动归档"))
+        self._h_auto_archive.setText(
+            tr("完成超过 N 天的卡片自动移入归档（可随时恢复）"))
+        for idx, (label, _v) in enumerate(self._auto_archive_labels()):
+            self._auto_archive_combo.setItemText(idx, label)
         self._t_data.setText(tr("数据目录"))
         self._h_data.setText(tr("看板数据与自动备份保存在"))
         self._dir_open_btn.setText(tr("打开目录"))

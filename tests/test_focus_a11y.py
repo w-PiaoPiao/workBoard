@@ -27,13 +27,16 @@ os.environ["PET_BOARD_DATA_DIR"] = tempfile.mkdtemp()
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from PySide6.QtCore import Qt
+from unittest.mock import patch
+
+from PySide6.QtCore import QPoint, Qt
 from PySide6.QtWidgets import QApplication, QPushButton
 
 _qapp = QApplication.instance() or QApplication([])
 
 from app.config import AppConfig            # noqa: E402
 from app.models.board import BoardList, Card   # noqa: E402
+from app.views import board_view               # noqa: E402
 from app.views.board_view import BoardView     # noqa: E402
 from app.views.theme import AppTheme           # noqa: E402
 
@@ -92,26 +95,32 @@ class BoardHitTargetTest(unittest.TestCase):
     def _card(self):
         return self.view._iter_card_widgets().__next__()
 
-    def test_card_checkbox_meets_min_target(self):
-        cw = self._card()
-        btn = cw._check_btn
-        self.assertGreaterEqual(btn.width(), MIN_TARGET)
-        self.assertGreaterEqual(btn.height(), MIN_TARGET)
+    def test_card_title_has_no_checkbox(self):
+        """卡片标题前不再有勾选框：完成路径改为拖入完成列 / 右键 / 空格
 
-    def test_card_checkbox_is_checkable(self):
-        """必须 setCheckable：否则读屏只报 "button"，永远不报勾选状态"""
-        btn = self._card()._check_btn
-        self.assertTrue(btn.isCheckable(),
-                        "勾选框不可 check，无障碍层拿不到完成状态")
-        self.assertTrue(btn.accessibleName(),
-                        "勾选框没有 accessibleName")
-
-    def test_checkbox_reflects_done_state(self):
+        回归：标题前的小方框在视觉上被读成"这条要不要打钩"，而真正决定
+        完成状态的是卡片所在列与右键菜单；勾选框只留下一颗多余的方框。
+        """
         cw = self._card()
-        cw._check_btn.set_done(True)
-        self.assertTrue(cw._check_btn.isChecked())
-        cw._check_btn.set_done(False)
-        self.assertFalse(cw._check_btn.isChecked())
+        self.assertFalse(hasattr(cw, "_check_btn"),
+                         "卡片仍在标题前保留勾选框")
+        from app.views.controls import CardCheckButton
+        self.assertEqual(
+            [w for w in cw.findChildren(CardCheckButton)], [],
+            "卡片子树里仍有勾选框控件")
+
+    def test_card_menu_offers_done_toggle(self):
+        """右键菜单提供一键完成/恢复（勾选框移除后的鼠标路径）"""
+        cw = self._card()
+        labels: list[str] = []
+
+        def fake_popup(menu, _pos):
+            labels.extend(a.text() for a in menu.actions())
+            return None
+
+        with patch.object(board_view, "_popup_menu", fake_popup):
+            cw._show_card_menu(QPoint(0, 0))
+        self.assertIn("标记为已完成", labels)
 
 
 class BoardKeyboardTest(unittest.TestCase):
@@ -168,14 +177,18 @@ class BoardAccessibleNameTest(unittest.TestCase):
 
 
 class CheckboxPaintTest(unittest.TestCase):
-    """勾选框绘制不得抛异常（paintEvent 内异常会损坏 backing store）"""
+    """今日清单里的勾选框绘制不得抛异常（paintEvent 内异常会损坏 backing store）
+
+    看板卡片已不再使用勾选框，这个自绘控件只剩今日浮窗在用（控件本身
+    在 app.views.controls 里）。
+    """
 
     def test_paint_both_states_and_themes(self):
         from PySide6.QtGui import QPixmap
-        from app.views.board_view import _CardCheckButton
+        from app.views.controls import CardCheckButton
         for mode in ("light", "dark"):
             AppTheme.set_mode(mode)
-            btn = _CardCheckButton()
+            btn = CardCheckButton()
             try:
                 for done in (False, True):
                     btn.set_done(done)

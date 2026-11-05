@@ -1961,5 +1961,40 @@ class RawDropIndexTest(unittest.TestCase):
         self.assertEqual(col._raw_index_from_visible(1), 1)
 
 
+class DoneColumnBatchArchiveTest(unittest.TestCase):
+    """已完成列的「⋯ → 批量归档…」入口"""
+
+    def setUp(self):
+        self.view = BoardView()
+
+    def tearDown(self):
+        self.view.deleteLater()
+
+    def test_only_done_column_shows_batch_archive(self):
+        lists = make_lists([("待办", ["A"]), ("已完成", ["B"])])
+        self.view.refresh(lists)
+        todo, done = self.view._columns[0], self.view._columns[1]
+        self.assertFalse(todo._header._act_batch_archive.isVisible())
+        self.assertTrue(done._header._act_batch_archive.isVisible())
+
+    def test_batch_archive_follows_rename(self):
+        """列改名后入口显隐跟随（与卡片徽标的完成列判定同一口径）"""
+        lists = make_lists([("待办", ["A"])])
+        self.view.refresh(lists)
+        header = self.view._columns[0]._header
+        self.assertFalse(header._act_batch_archive.isVisible())
+        lists[0].title = "Done"
+        self.view.refresh(lists)
+        self.assertTrue(header._act_batch_archive.isVisible())
+
+    def test_batch_archive_action_emits_board_signal(self):
+        lists = make_lists([("已完成", ["B"])])
+        self.view.refresh(lists)
+        got: list[str] = []
+        self.view.signal_batch_archive_dialog.connect(got.append)
+        self.view._columns[0]._header._act_batch_archive.trigger()
+        self.assertEqual(got, [lists[0].id])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

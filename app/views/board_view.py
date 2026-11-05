@@ -64,7 +64,12 @@ from PySide6.QtWidgets import (
 
 from app.config import AppConfig
 from app.i18n import label_display, priority_name, repeat_display, tr
-from app.models.board import FUND_KIND_LABELS, BoardList, Card
+from app.models.board import (
+    FUND_KIND_LABELS,
+    BoardList,
+    Card,
+    is_done_list_title,
+)
 from app.views import motion, tokens
 from app.views.notes_popover import (
     hide_notes_popover,
@@ -603,19 +608,13 @@ def _fmt_due_plain(due: str) -> str:
     return f"{d.month}/{d.day}"
 
 
-# 视为「已完成」列的列表标题（大小写与首尾空白不敏感）。
-# 看板列是可自由改名的，没有"完成列"这个持久化字段；产品口径是
-# **按列名判定**：卡片在「已完成」/「Done」列里就不再展示逾期，
-# 拖出该列立即恢复。列改名后这张"完成列"的判定随之失效。
-_DONE_LIST_TITLES = frozenset({"已完成", "done", "completed"})
-
-
+# 视为「已完成」列的列表标题判定见 models.board.is_done_list_title：
+# 看板列可自由改名，没有"完成列"这个持久化字段；产品口径是**按列名判定**：
+# 卡片在「已完成」/「Done」列里就不再展示逾期，拖出该列立即恢复。
+# 拖拽语义（拖入即完成 / 拖出即恢复）由控制器复用同一判定，避免两处口径漂移。
 def _is_done_list(title: str) -> bool:
     """列表标题是否视为「已完成」列"""
-    text = str(title or "").strip().casefold()
-    if not text:
-        return False
-    return text in _DONE_LIST_TITLES or text == tr("已完成").strip().casefold()
+    return is_done_list_title(title)
 
 
 def _fund_deadline_name(limit: int) -> str:
@@ -665,178 +664,6 @@ def _fmt_fund_steps_line(card: Card) -> str:
     return f"{head} · {tr('当前：{name}').format(name=cur['name'])}"
 
 
-class _CardCheckButton(QPushButton):
-    """自绘勾选框（替代 ☐/☑ 字形，跨平台渲染一致）
-
-    完成瞬间对勾按路径描画（140ms）：勾选完成是最高频的正反馈动作，
-    瞬时划线的满足感不足；描画进度由 _check_progress 驱动，可被
-    "暂停动画"开关跳过。
-    """
-
-    _P0 = (3.6, 8.2)     # 对勾折点序列（相对勾选框左上角）
-    _P1 = (7.0, 11.4)
-    _P2 = (12.6, 4.6)
-    # 两段折线长度为常量（P 序列恒定）：paintEvent 每帧 math.hypot 纯浪费
-    _P01 = math.hypot(_P1[0] - _P0[0], _P1[1] - _P0[1])
-    _P12 = math.hypot(_P2[0] - _P1[0], _P2[1] - _P1[1])
-
-    # 完整对勾路径缓存（(0,0) 原点，绘制时 translate 到框左上角）：
-    # 完成态 progress 恒为 1，逐帧新建 QPainterPath 纯重复
-    _CHECK_PATH_FULL: QPainterPath | None = None
-
-    # 对勾色：压在 success 填充上。深色主题的 success 是亮绿，白对勾只有
-    # 1.99:1——勾选框的整个意义就是那个对勾，却在深色下几乎看不见。
-    # 与主按钮同思路：填充亮时文字反相。
-    @staticmethod
-    def _check_color() -> QColor:
-        return QColor(AppTheme.colors()["success_on"])
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setFlat(True)
-        # 命中区 24×24（可点击标准），视觉勾选框仍是 16px 居中绘制——
-        # 这是全板最高频的操作，此前 20×20 是整个界面上最小的目标之一
-        self.setFixedSize(24, 24)
-        self.setCursor(Qt.PointingHandCursor)
-        self.setToolTip(tr("点击切换完成状态"))
-        # 可 check：QPushButton 不可 check 时读屏只报 "button"，
-        # 永远不报勾选状态——完成与否只由删除线和绿底承载，非视觉用户
-        # 拿不到这个信息。setCheckable 让 QAccessible 暴露 checked。
-        self.setCheckable(True)
-        self.setAccessibleName(tr("切换完成状态"))
-        self._done = False
-        self._check_anim: QVariantAnimation | None = None
-        self._check_progress = 1.0   # 对勾描画进度 0..1（1=完整对勾）
-
-    def retexts(self) -> None:
-        """语言切换：读屏名与 tooltip 是构造期定格的，需要重设"""
-        self.setToolTip(tr("点击切换完成状态"))
-        self.setAccessibleName(tr("切换完成状态"))
-
-    def enterEvent(self, event) -> None:
-        """悬停变色必须自己请求重绘
-
-        paintEvent 里按 `underMouse()` 取 accent 色，但没有 enter/leave
-        时不会有人来触发重绘——悬停高亮要等别的控件恰好让本卡重画才出现，
-        而这是全板最高频的操作，反馈不能是"看运气"。
-        """
-        super().enterEvent(event)
-        self.update()
-
-    def leaveEvent(self, event) -> None:
-        super().leaveEvent(event)
-        self.update()
-
-    def set_done(self, done: bool) -> None:
-        if self._done == done:
-            return
-        self._done = done
-        self.setChecked(done)       # 同步给无障碍层
-        self.update()
-        if done and motion.enabled():
-            self._start_check_anim()
-        else:
-            self._stop_check_anim()
-
-    def _start_check_anim(self) -> None:
-        self._stop_check_anim()
-        anim = QVariantAnimation(self)
-        anim.setDuration(140)
-        anim.setStartValue(0.0)
-        anim.setEndValue(1.0)
-        anim.setEasingCurve(QEasingCurve.OutCubic)
-        anim.valueChanged.connect(self._on_check_tick)
-        anim.finished.connect(lambda: self._stop_check_anim())
-        self._check_anim = anim
-        self._check_progress = 0.0
-        anim.start()
-
-    def _stop_check_anim(self) -> None:
-        anim = self._check_anim
-        if anim is not None:
-            anim.stop()
-            anim.deleteLater()
-            self._check_anim = None
-        self._check_progress = 1.0
-        self.update()
-
-    def _on_check_tick(self, value) -> None:
-        self._check_progress = float(value)
-        self.update()
-
-    def paintEvent(self, event) -> None:
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
-        c = AppTheme.colors()
-        box = QRect((self.width() - 16) // 2, (self.height() - 16) // 2, 16, 16)
-        # 勾选框外形随皮肤：rounded 圆角方框（默认）/ square 直角方框
-        # （终端、粗野：这两个皮肤里任何圆角都会显得"没换干净"）。
-        radius = 4.5 if AppTheme.shape()["check_style"] != "square" else 0.0
-        if self._done:
-            # 完成：主题色填充 + 对勾（按描画进度截取路径）
-            painter.setPen(Qt.NoPen)
-            painter.setBrush(QColor(c["success"]))
-            painter.drawRoundedRect(box, radius, radius)
-            # 对勾色随主题：深色的 success 是亮绿，白对勾只有 1.99:1
-            pen = _CHECK_PENS.get(c["success_on"])
-            if pen is None:
-                pen = QPen(self._check_color(), 1.8)
-                pen.setCapStyle(Qt.RoundCap)
-                pen.setJoinStyle(Qt.RoundJoin)
-                _CHECK_PENS[c["success_on"]] = pen
-            painter.setPen(pen)
-            total = self._P01 + self._P12
-            d = self._check_progress * total
-            if d >= total:
-                # 动画结束后的常态：直接用缓存完整路径
-                if _CardCheckButton._CHECK_PATH_FULL is None:
-                    path = QPainterPath(QPointF(*_CardCheckButton._P0))
-                    path.lineTo(QPointF(*_CardCheckButton._P1))
-                    path.lineTo(QPointF(*_CardCheckButton._P2))
-                    _CardCheckButton._CHECK_PATH_FULL = path
-                painter.save()
-                painter.translate(box.topLeft())
-                painter.drawPath(_CardCheckButton._CHECK_PATH_FULL)
-                painter.restore()
-            else:
-                bx, by = box.left(), box.top()
-                p0 = QPointF(bx + self._P0[0], by + self._P0[1])
-                p1 = QPointF(bx + self._P1[0], by + self._P1[1])
-                p2 = QPointF(bx + self._P2[0], by + self._P2[1])
-                path = QPainterPath()
-                path.moveTo(p0)
-                if d <= self._P01:
-                    t = (d / self._P01) if self._P01 > 0 else 1.0
-                    path.lineTo(p0 + (p1 - p0) * t)
-                else:
-                    t = ((d - self._P01) / self._P12) if self._P12 > 0 else 1.0
-                    path.lineTo(p1)
-                    path.lineTo(p1 + (p2 - p1) * t)
-                painter.drawPath(path)
-        else:
-            # 未完成：圆角方框，悬停变主题色
-            # 未完成：圆角方框，悬停变主题色
-            hex_color = c["accent"] if self.underMouse() else c["text_disabled"]
-            pen = _CHECK_BOX_PENS.get(hex_color)
-            if pen is None:
-                pen = QPen(QColor(hex_color), 1.5)
-                _CHECK_BOX_PENS[hex_color] = pen
-            painter.setPen(pen)
-            painter.setBrush(Qt.NoBrush)
-            painter.drawRoundedRect(box, radius, radius)
-        painter.end()
-
-
-# 完成态对勾画笔按颜色缓存：颜色随主题变（success_on），
-# 每帧新建 QPen + 设 cap/join 是纯重复；QPen 值语义，多控件共享安全
-_CHECK_PENS: dict = {}
-
-# 未完成态勾选框画笔按颜色 hex 缓存：paintEvent 每帧新建 QPen 纯重复
-# （hex 键随主题切换自动换 key，同 _CHECK_PEN 的类常量范式，但颜色取自
-# 主题调色板，不能一次性定为类常量）
-_CHECK_BOX_PENS: dict[str, QPen] = {}
-
-
 class CardWidget(QFrame):
     """看板卡片"""
 
@@ -878,7 +705,6 @@ class CardWidget(QFrame):
         self._tooltip_backup: str | None = None   # 悬停备注徽章期间暂存卡片 tooltip
         self._meta_items_cache: list = []          # (文本, 色键, 是否备注) 供 tooltip 汇总
         self._delete_btn: QPushButton | None = None
-        self._check_btn: QPushButton | None = None
         self._title_label: QLabel | None = None
         self._meta_badges: list[tuple[QLabel, str]] = []
         self._notes_badge: QLabel | None = None    # "≡ 有备注"徽章（悬停弹备注预览）
@@ -987,6 +813,10 @@ class CardWidget(QFrame):
         # 编辑对话框才能勾选，是规划链路上最贵的操作
         act_star = menu.addAction(
             tr("移出今日") if self._card.starred else tr("加入今日"))
+        # 卡片标题前的勾选框移除后，右键是鼠标侧的一键完成/恢复入口
+        # （空格键与批量操作栏"切换完成"保留给键盘/多选路径）
+        act_done = menu.addAction(
+            tr("标记为未完成") if self._card.done else tr("标记为已完成"))
         menu.addSeparator()
         # 高频字段的快捷编辑：优先级/截止/换列此前一律"打开对话框→改→
         # 保存"三步走，是日常整理看板最费步数的路径
@@ -1030,6 +860,8 @@ class CardWidget(QFrame):
             return
         if chosen is act_star:
             self.signal_card_star.emit(card_id)
+        elif chosen is act_done:
+            self.signal_done_toggled.emit(card_id, not self._card.done)
         elif act_workdir_open is not None and chosen is act_workdir_open:
             self.signal_card_workdir_open.emit(card_id)
         elif chosen is act_workdir_set:
@@ -1106,7 +938,7 @@ class CardWidget(QFrame):
         """主题/皮肤切换后同步卡片内部状态，不重建子控件（保留悬停状态）
 
         配色由看板级样式表统一下发（见 _board_qss），这里只处理与配色无关
-        的状态：删除按钮显隐、勾选框与标题完成态。
+        的状态：删除按钮显隐与标题完成态。
 
         色条裁剪路径按 (尺寸, 圆角) 缓存——皮肤会改卡片圆角，这里一并清掉，
         否则方角皮肤下色条端头仍是圆的。
@@ -1114,14 +946,7 @@ class CardWidget(QFrame):
         self._clip_path = None
         self._clip_size = ()
         self._revalidate_hover()   # 按光标实际位置复核，顺带清掉残留悬停态
-        self._style_check()
         self._style_title()
-
-    def _style_check(self) -> None:
-        """勾选框状态同步（自绘控件，done 变化时重绘）"""
-        if self._check_btn is None:
-            return
-        self._check_btn.set_done(self._card.done)
 
     def _style_title(self) -> None:
         """标题完成态：动态属性驱动 QSS 选择器（[done="true"]）
@@ -1136,11 +961,11 @@ class CardWidget(QFrame):
     # ── 构建 UI ───────────────────────────────────────────
 
     def _sync_accessible_name(self) -> None:
-        """给卡片与勾选框登记可读名（屏幕阅读器）
+        """登记卡片可读名（屏幕阅读器）
 
         卡片是 StrongFocus 的键盘导航核心，但自绘控件对屏幕阅读器是
         不透明黑盒；accessibleName 用"标题+关键状态"一句话描述。
-        rebuild 与 set_done（勾选不触发 rebuild）两个刷新点都会调。
+        rebuild 与每次刷新都会调。
         """
         c = self._card
         states = []
@@ -1152,9 +977,6 @@ class CardWidget(QFrame):
             states.append(AppConfig.PRIORITY_MARKS.get(c.priority, ""))
         name = c.title + (("（" + "，".join(states) + "）") if states else "")
         self.setAccessibleName(name)
-        if self._check_btn is not None:
-            self._check_btn.setAccessibleName(
-                tr("完成 {title}").format(title=c.title))
 
     def rebuild(self) -> None:
         # 清空旧布局：递归清空并让旧子件立刻脱离卡片，
@@ -1169,7 +991,6 @@ class CardWidget(QFrame):
             self._delete_btn.setParent(None)
             self._delete_btn.deleteLater()
 
-        self._check_btn = None
         self._title_label = None
         self._meta_badges = []
         self._notes_badge = None
@@ -1192,25 +1013,14 @@ class CardWidget(QFrame):
         root.setContentsMargins(max(10, stripe_n * 4 + 7), 8, 10, 8)
         root.setSpacing(6)
 
-        # 标题行（勾选 + 文本）
-        title_row = QHBoxLayout()
-        title_row.setSpacing(8)
-        check = _CardCheckButton()
-        check.set_done(card.done)
-        self._check_btn = check
-        self._style_check()
-        check.clicked.connect(
-            lambda: self.signal_done_toggled.emit(self._card.id,
-                                                  not self._card.done))
-        title_row.addWidget(check)
-
+        # 标题（不再带勾选框：完成状态改由「拖入/拖出已完成列」、右键菜单
+        # 与空格键切换——卡片标题前只留干净的阅读起点）
         title = QLabel(card.title)
         title.setObjectName("cardTitle")
         title.setWordWrap(True)
         self._title_label = title
         self._style_title()
-        title_row.addWidget(title, 1)
-        root.addLayout(title_row)
+        root.addWidget(title)
 
         # 右上角删除按钮：仅作 child 绝对定位（不占布局，不挤压标题），悬停卡片才出现
         self._delete_btn = QPushButton("✕", self)
@@ -1912,6 +1722,7 @@ class ListHeader(QWidget):
     signal_fund_watch = Signal(str, bool)     # list_id, enabled 资金分配监视
     signal_fund_export = Signal(str)          # list_id 导出资金记录 Excel
     signal_duplicate_requested = Signal(str)  # list_id（复制列表含卡片）
+    signal_batch_archive = Signal(str)        # list_id（已完成列：批量归档）
 
     def __init__(self, board_list: BoardList, parent=None):
         super().__init__(parent)
@@ -1966,8 +1777,13 @@ class ListHeader(QWidget):
         # 导出 Excel（仅资金监视泳道可见）
         self._act_fund_export = QAction(tr("导出 Excel…"), self._menu)
         self._act_fund_export.setVisible(board_list.fund_watch)
+        # 批量归档（仅「已完成」列可见）：勾选要归档的卡片一次清走。
+        # 列名判定与卡片徽标同口径（见 is_done_list_title），列改名后自动跟随。
+        self._act_batch_archive = QAction(tr("批量归档…"), self._menu)
+        self._act_batch_archive.setVisible(_is_done_list(board_list.title))
         self._menu.addAction(self._act_rename)
         self._menu.addAction(self._act_duplicate)
+        self._menu.addAction(self._act_batch_archive)
         self._menu.addSeparator()
         self._menu.addAction(self._act_fund_watch)
         self._menu.addAction(self._act_fund_export)
@@ -1975,6 +1791,8 @@ class ListHeader(QWidget):
         self._act_rename.triggered.connect(self._start_rename)
         self._act_duplicate.triggered.connect(
             lambda: self.signal_duplicate_requested.emit(self._lst.id))
+        self._act_batch_archive.triggered.connect(
+            lambda: self.signal_batch_archive.emit(self._lst.id))
         self._act_delete.triggered.connect(
             lambda: self.signal_delete_requested.emit(self._lst.id))
         self._act_fund_watch.toggled.connect(self._on_fund_watch_toggled)
@@ -2036,6 +1854,8 @@ class ListHeader(QWidget):
         self._fund_mark.setVisible(board_list.fund_watch)
         self._act_fund_watch.setChecked(board_list.fund_watch)
         self._act_fund_export.setVisible(board_list.fund_watch)
+        # 列改名可能进入/离开「已完成」列：批量归档入口随之显隐
+        self._act_batch_archive.setVisible(_is_done_list(board_list.title))
 
     def reapply_theme(self) -> None:
         """主题切换后同步头部状态（配色由看板级样式表统一下发）
@@ -2055,6 +1875,7 @@ class ListHeader(QWidget):
         self._act_rename.setText(tr("重命名"))
         self._act_delete.setText(tr("删除列表"))
         self._act_duplicate.setText(tr("复制列表（含卡片）"))
+        self._act_batch_archive.setText(tr("批量归档…"))
         self._act_fund_watch.setText(tr("资金分配监视"))
         self._act_fund_export.setText(tr("导出 Excel…"))
         self._fund_mark.setToolTip(tr("资金分配监视泳道"))
@@ -2469,6 +2290,7 @@ class ListColumn(QFrame):
     signal_fund_watch = Signal(str, bool)      # list_id, enabled 资金分配监视
     signal_fund_export = Signal(str)           # list_id 导出资金记录 Excel
     signal_duplicate_requested = Signal(str)   # list_id（复制列表含卡片）
+    signal_batch_archive = Signal(str)         # list_id（已完成列：批量归档）
     signal_files_dropped = Signal(str, list)   # list_id, [本地文件路径]（拖文件建卡）
 
     COLLAPSED_HEIGHT = 52        # 折叠态高度（仅剩标题栏）
@@ -2513,6 +2335,7 @@ class ListColumn(QFrame):
         self._header.signal_fund_export.connect(self.signal_fund_export)
         self._header.signal_duplicate_requested.connect(
             self.signal_duplicate_requested)
+        self._header.signal_batch_archive.connect(self.signal_batch_archive)
         root.addWidget(self._header)
 
         # 卡片滚动区
@@ -3505,6 +3328,8 @@ class BoardView(QWidget):
     signal_card_workdir_open = Signal(str)      # card_id（打开工作目录）
     signal_card_workdir_set = Signal(str)       # card_id（右键快捷设置目录）
     signal_archive_open = Signal()
+    # 已完成列「⋯ → 批量归档…」：打开勾选式批量归档对话框（list_id）
+    signal_batch_archive_dialog = Signal(str)
     signal_settings_clicked = Signal()          # 打开设置界面
     signal_export = Signal(str)                 # "md" | "csv"
     signal_export_backup = Signal()             # 导出完整备份 .json
@@ -4868,6 +4693,7 @@ class BoardView(QWidget):
         col.signal_fund_watch.connect(self.signal_list_fund_watch)
         col.signal_fund_export.connect(self.signal_list_fund_export)
         col.signal_duplicate_requested.connect(self.signal_list_duplicate)
+        col.signal_batch_archive.connect(self.signal_batch_archive_dialog)
         self._columns.append(col)
         # 恢复上次折叠状态（save=False 不触发持久化回调；建列时不播动画）
         if collapsed_ids is None:

@@ -299,6 +299,7 @@ _zh_en: dict[str, str] = {
     "截止日期": "Due date",
     "未设置": "Not set",
     "标记为已完成": "Mark as done",
+    "标记为未完成": "Mark as not done",
     "加入今日聚焦": "Add to Today",
     "星标后卡片会出现在「今日聚焦」视图和桌宠角标中":
         "Starred cards appear in the Today focus view and the pet badge",
@@ -425,6 +426,18 @@ _zh_en: dict[str, str] = {
     "归档后可以随时「恢复」回看板，或彻底删除":
         "Archived cards can be restored to the board anytime, or deleted "
         "for good",
+    # ── 已完成列批量归档 ──
+    "批量归档…": "Batch archive…",
+    "批量归档已完成卡片": "Batch archive done cards",
+    "勾选要归档的卡片，归档后可在归档区恢复":
+        "Select the cards to archive — you can restore them from Archive",
+    "归档 {title}": "Archive {title}",
+    "{title}\n完成于 {date}": "{title}\nCompleted on {date}",
+    "清空选择": "Clear selection",
+    "这列没有可归档的已完成卡片":
+        "No completed cards to archive in this list",
+    "已归档 {n} 张已完成卡片": "{n} completed cards archived",
+    "已自动归档 {n} 张已完成卡片": "{n} completed cards auto-archived",
     "换个关键词，或清空搜索框":
         "Try another keyword, or clear the search box",
     # ── 今日浮窗 ──
@@ -509,7 +522,6 @@ _zh_en: dict[str, str] = {
     "更多操作": "More actions",
     "删除": "Delete",
     "桌宠看板导出_{date}": "PetBoard_Export_{date}",
-    "完成 {title}": "Complete {title}",
     # ── 多看板 ──
     "切换 / 管理看板": "Switch / manage boards",
     "+ 新建看板": "+ New Board",
@@ -653,6 +665,12 @@ _zh_en: dict[str, str] = {
     "提前 1 天": "1 day ahead",
     "提前 2 天": "2 days ahead",
     "提前 3 天": "3 days ahead",
+    # ── 已完成自动归档 ──
+    "已完成自动归档": "Auto-archive done cards",
+    "完成超过 N 天的卡片自动移入归档（可随时恢复）":
+        "Cards completed over N days ago move to Archive "
+        "(restorable anytime)",
+    "{n} 天后自动归档": "After {n} days",
     "{n} 天后截止": "Due in {n} days",
     "已切换看板": "Board switched",
     # ── 快捷编辑 / 捕获 / 拖拽增强 / 归档与模板 / 提醒 / 浮窗 ──

@@ -67,6 +67,20 @@ def _clean_id(value) -> str:
     return text if _ID_RE.fullmatch(text) else _new_id()
 
 
+# 视为「已完成」列的列表标题（大小写与首尾空白不敏感）。
+# 看板列可自由改名，没有"完成列"这个持久化字段，产品口径是**按列名判定**：
+# 卡片拖进「已完成」/「Done」列即视为完成（视图据此不再报逾期，控制器据此
+# 同步 done 状态），拖出该列立即恢复。
+DONE_LIST_TITLES = frozenset({"已完成", "done", "completed"})
+
+
+def is_done_list_title(title) -> bool:
+    """列表标题是否视为「已完成」列（视图判定与拖拽语义共用同一口径）"""
+    text = str(title or "").strip().casefold()
+    if not text:
+        return False
+    return text in DONE_LIST_TITLES or text == tr("已完成").strip().casefold()
+
 
 # 重复周期全集（完成时自动滚动截止日期到下一周期）
 REPEAT_KINDS = ("never", "daily", "weekly", "weekdays",

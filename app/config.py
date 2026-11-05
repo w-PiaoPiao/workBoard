@@ -398,6 +398,38 @@ class AppConfig:
         _settings().setValue(cls.KEY_REMIND_ADVANCE,
                              max(0, min(3, int(days))))
 
+    # ── 已完成卡片自动归档（0 = 关闭）──────────────────────────
+    #
+    # 看板常驻，已完成列攒久了会挤占视野；自动归档把"完成超过 N 天"的
+    # 卡片移进归档区（可随时恢复/撤销），是清理完成列的低成本兜底。
+
+    KEY_AUTO_ARCHIVE_DAYS = "board/auto_archive_days"
+    AUTO_ARCHIVE_DAYS = (0, 1, 3, 7, 14, 30)   # 可选项；0 = 不自动归档
+
+    @classmethod
+    def get_auto_archive_days(cls) -> int:
+        """已完成卡片自动归档天数；0=关闭
+
+        非法值回退 0（关闭最安全）：偏好被改坏时宁可不动数据，也不能
+        突然把一大批已完成卡片扫进归档。
+        """
+        try:
+            days = int(_settings().value(
+                cls.KEY_AUTO_ARCHIVE_DAYS, 0) or 0)
+        except (TypeError, ValueError):
+            return 0
+        return days if days in cls.AUTO_ARCHIVE_DAYS else 0
+
+    @classmethod
+    def save_auto_archive_days(cls, days: int) -> None:
+        try:
+            days = int(days)
+        except (TypeError, ValueError):
+            return
+        if days not in cls.AUTO_ARCHIVE_DAYS:
+            return
+        _settings().setValue(cls.KEY_AUTO_ARCHIVE_DAYS, days)
+
     # ── 折叠列表（会话之间保持列折叠状态） ──────────────────
 
     @classmethod
