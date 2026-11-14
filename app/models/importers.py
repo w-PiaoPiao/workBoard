@@ -361,6 +361,9 @@ def board_from_csv(text: str, fallback_title: str = "") -> tuple[Board, str]:
             interval = int(_csv_cell(row, col.get("重复间隔")).strip())
         except ValueError:
             interval = 1
+        # 与 Card.from_dict / apply 同口径：构造函数不归一化，导入端必须
+        # 夹紧，否则手写 CSV 的负数/超大间隔会随本次落盘原样写进数据文件
+        interval = max(1, min(365, interval))
 
         created_raw = _csv_cell(row, col.get("创建时间")).strip()
         try:

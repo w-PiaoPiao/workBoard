@@ -784,7 +784,9 @@ class AppController(QObject):
             # utf-8-sig 兼容带 BOM 的导出文件（与 _write_export_csv 对齐）
             text = Path(path).read_text(encoding="utf-8-sig")
             board, report = board_from_csv(text, fallback_title=Path(path).stem)
-        except (OSError, ValueError, AttributeError, TypeError) as e:
+        except (OSError, ValueError, AttributeError, TypeError, csv.Error) as e:
+            # csv.Error：超长字段（>128KB）/NUL 字节等结构性畸形，ValueError
+            # 接不住它（继承自 Exception）——不捕获会让导入直接炸出全局钩子
             self._show_error(tr("导入失败：{err}").format(err=e))
             return
         self._activate_imported_board(board, Path(path).stem, report)
@@ -2388,6 +2390,9 @@ class AppController(QObject):
             self._stats_dialog.close()
             self._stats_dialog.deleteLater()
             self._stats_dialog = None
+        # 历史版本对话框有现成 retexts()（快照行按 _last_items 整组重建）
+        if self._history_dialog is not None:
+            self._history_dialog.retexts()
 
     # ── 主题 / 动画 ───────────────────────────────────────
 

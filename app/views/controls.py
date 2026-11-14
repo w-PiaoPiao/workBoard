@@ -566,7 +566,6 @@ class CardCheckButton(QPushButton):
                 painter.drawPath(path)
         else:
             # 未完成：圆角方框，悬停变主题色
-            # 未完成：圆角方框，悬停变主题色
             hex_color = c["accent"] if self.underMouse() else c["text_disabled"]
             pen = _CHECK_BOX_PENS.get(hex_color)
             if pen is None:

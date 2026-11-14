@@ -31,6 +31,7 @@ _qapp = QApplication.instance() or QApplication([])
 from app.config import AppConfig
 from app.controllers.app_controller import AppController
 from app.models.board import BoardList, Card
+from app import i18n
 import app.controllers.app_controller as controller_mod
 import app.views.board_view as board_view_mod
 import app.views.theme as theme_mod
@@ -1337,6 +1338,34 @@ class ControllerFeatureTest(unittest.TestCase):
                 patch.object(self.c, "_show_error") as err:
             self.c._on_import_backup()
         err.assert_called_once()
+
+    def test_csv_import_malformed_field_shows_error(self):
+        """超长字段（>csv 模块 128KB 上限）抛 csv.Error：导入给友好报错不炸"""
+        from PySide6.QtWidgets import QFileDialog
+        bad = Path(tempfile.mkdtemp()) / "bad.csv"
+        bad.write_text("标题,备注\n卡," + "x" * 200_000 + "\n",
+                       encoding="utf-8")
+        with patch.object(QFileDialog, "getOpenFileName",
+                          return_value=(str(bad), "CSV (*.csv)")), \
+                patch.object(self.c, "_show_error") as err:
+            self.c._on_import_csv()
+        err.assert_called_once()
+
+    def test_language_change_refreshes_history_dialog(self):
+        """开着的历史版本对话框在语言切换时走 retexts（快照行整组重建）"""
+        self._reset()
+        self.c._on_history_open()
+        dlg = self.c._history_dialog
+        try:
+            self.assertIsNotNone(dlg)
+            with patch.object(dlg, "retexts") as rt:
+                self.c._on_language_changed("en")
+            rt.assert_called_once()
+        finally:
+            dlg.close()
+            dlg.deleteLater()
+            self.c._history_dialog = None
+        i18n.set_lang("zh")   # 还原语言，避免污染后续用例的文案快照
 
     # ── 列表折叠持久化 ────────────────────────────────────
 

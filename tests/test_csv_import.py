@@ -111,6 +111,16 @@ class ParseRuleTest(unittest.TestCase):
         self.assertEqual(c.repeat, "custom")
         self.assertEqual(c.repeat_interval, 1)
 
+    def test_repeat_interval_clamped(self):
+        """手写 CSV 的越界间隔夹紧到 1..365（与 Card.from_dict 同口径）"""
+        board, _ = self._parse(
+            "标题,重复,重复间隔\n卡A,自定义,-5\n卡B,自定义,99999\n"
+            "卡C,自定义,abc")
+        cards = board.lists[0].cards
+        self.assertEqual(cards[0].repeat_interval, 1)   # 负数 → 1
+        self.assertEqual(cards[1].repeat_interval, 365)  # 超大 → 上限
+        self.assertEqual(cards[2].repeat_interval, 1)    # 非数字 → 1
+
     def test_value_tolerances(self):
         """非法值降级不整行作废：标签/优先级/日期/番茄数/created_at"""
         board, _ = self._parse(
