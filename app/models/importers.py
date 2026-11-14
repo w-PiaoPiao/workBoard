@@ -1,4 +1,4 @@
-"""外部格式导入：Trello 看板 JSON 导出 → Board、Markdown → Board
+"""外部格式导入：Trello 看板 JSON 导出 → Board、Markdown → Board、CSV → Board
 
 Trello 导出格式（JSON）：顶层 name/lists/cards/checklists，cards 内
 idList 关联列表、labels 为对象数组、due 为 ISO 时间戳。这里做"无损
@@ -8,13 +8,19 @@ idList 关联列表、labels 为对象数组、due 为 ISO 时间戳。这里做
 Markdown 导入兼容本应用自己的导出格式（## 列表 + - [x] 卡片 + 缩进
 备注行），也兼容常见任务清单写法（普通 - 条目视为未完成卡片）。
 
-两个解析器都是纯函数（str/dict → Board），不依赖 Qt，可独立单测。
+CSV 导入兼容本应用自己的导出格式（_write_export_csv：utf-8-sig +
+固定表头），按列名匹配、缺列容忍（旧版导出没有的列用默认值），
+保证导出 → 导入往返无损。
+
+解析器都是纯函数（str/dict → Board），不依赖 Qt，可独立单测。
 """
 
 from __future__ import annotations
 
+import csv
+import io
 import re
-from datetime import datetime
+from datetime import date as _date, datetime
 
 from app.i18n import tr
 from app.config import AppConfig
@@ -256,6 +262,138 @@ def board_from_markdown(text: str, fallback_title: str = "") -> tuple[Board, str
     board = Board(lists=lists, name=board_title)
     total = sum(len(l.cards) for l in board.lists)
     return board, f"列表 {len(lists)} · 卡片 {total}"
+
+
+# ── CSV 导入（本应用导出格式回读）────────────────────────────
+# _write_export_csv 表头与列值约定：标签列是分号分隔的色板 key（非中文
+# 名）；完成列"是/否"；优先级/重复列写中文名；utf-8-sig 编码（Excel
+# 友好）；_csv_safe 给 =+-@ 开头单元格加的前缀 ' 在此还原。
+
+_CSV_REQUIRED_COL = "标题"
+_CSV_DUE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+# 完成列宽松接受（本应用写"是"；第三方常见 x/true/y）
+_CSV_DONE_TRUE = ("是", "x", "X", "1", "y", "Y", "true", "yes", "done")
+_PRIORITY_FROM_NAME = {v: k for k, v in AppConfig.PRIORITY_NAMES.items() if v}
+_PRIORITY_FROM_MARK = {v: k for k, v in AppConfig.PRIORITY_MARKS.items() if v}
+
+
+def _csv_cell(row: list[str], idx: int | None) -> str:
+    """按列索引取单元格；缺列/短行返回空串"""
+    if idx is None or idx >= len(row):
+        return ""
+    return row[idx]
+
+
+def _csv_unsafe(text: str) -> str:
+    """还原导出端 _csv_safe 的公式注入前缀：'= → =（仅限 =+-@ 开头）"""
+    if text[:1] == "'" and text[1:2] in ("=", "+", "-", "@"):
+        return text[1:]
+    return text
+
+
+def board_from_csv(text: str, fallback_title: str = "") -> tuple[Board, str]:
+    """CSV 任务清单 → (Board, 报告文本)；表头不含「标题」列抛 ValueError
+
+    按表头名匹配列（「重复间隔」为可选列，旧版导出没有时用默认值 1），
+    未知列忽略；值解析失败一律降级为默认而非整行作废，只有空标题行
+    计入"跳过"。created_at 非法时不传（落当前时刻）。
+    """
+    reader = csv.reader(io.StringIO(text, newline=""))
+    header = next(reader, None)
+    if header is None or not any(h.strip() for h in header):
+        raise ValueError("文件为空，不是有效的 CSV")
+    # 容忍手写文件残留的 BOM（正常路径 utf-8-sig 已剥离）
+    header = [h.lstrip("\ufeff").strip() for h in header]
+    if _CSV_REQUIRED_COL not in header:
+        raise ValueError("缺少「标题」列，不是本应用导出的 CSV 格式")
+    col = {name: i for i, name in enumerate(header)}
+
+    lists_by_title: dict[str, BoardList] = {}
+    order: list[str] = []
+    total = 0
+    skipped = 0
+    for row in reader:
+        title = _csv_unsafe(_csv_cell(row, col.get(_CSV_REQUIRED_COL))).strip()
+        if not title:
+            if any(c.strip() for c in row):
+                skipped += 1
+            continue
+        lst_title = _csv_unsafe(
+            _csv_cell(row, col.get("列表"))).strip() or tr("待办")
+        lst = lists_by_title.get(lst_title)
+        if lst is None:
+            lst = BoardList(title=lst_title)
+            lists_by_title[lst_title] = lst
+            order.append(lst_title)
+
+        labels: list[str] = []
+        for piece in _csv_cell(row, col.get("标签")).split(";"):
+            key = _csv_unsafe(piece.strip())
+            if key in AppConfig.LABEL_NAMES and key not in labels:
+                labels.append(key)
+
+        due_raw = _csv_unsafe(_csv_cell(row, col.get("截止日期"))).strip()
+        # 形状 + 语义双重校验：2026-13-40 形状对但日期非法，同样不落库
+        due = None
+        if _CSV_DUE_RE.match(due_raw):
+            try:
+                _date.fromisoformat(due_raw)
+            except ValueError:
+                pass
+            else:
+                due = due_raw
+
+        done_raw = _csv_cell(row, col.get("完成")).strip()
+        done = done_raw in _CSV_DONE_TRUE
+
+        prio_raw = _csv_unsafe(_csv_cell(row, col.get("优先级"))).strip()
+        priority = (_PRIORITY_FROM_NAME.get(prio_raw)
+                    or _PRIORITY_FROM_MARK.get(prio_raw.upper()) or 0)
+
+        try:
+            pomodoros = max(0, int(_csv_cell(row, col.get("番茄数")).strip()))
+        except ValueError:
+            pomodoros = 0
+
+        repeat_raw = _csv_unsafe(_csv_cell(row, col.get("重复"))).strip()
+        repeat = _EXPORT_REPEAT_FROM_NAME.get(repeat_raw, "never")
+        try:
+            interval = int(_csv_cell(row, col.get("重复间隔")).strip())
+        except ValueError:
+            interval = 1
+
+        created_raw = _csv_cell(row, col.get("创建时间")).strip()
+        try:
+            created_at = created_raw if created_raw and \
+                datetime.fromisoformat(created_raw) else None
+        except ValueError:
+            created_at = None
+
+        card = Card(
+            title=title,
+            notes=_csv_unsafe(_csv_cell(row, col.get("备注"))),
+            labels=labels,
+            due_date=due,
+            done=done,
+            priority=priority,
+            pomodoros=pomodoros,
+            repeat=repeat,
+            repeat_interval=interval,
+            **({"created_at": created_at} if created_at else {}),
+        )
+        lst.cards.append(card)
+        total += 1
+
+    if not total:
+        raise ValueError("未找到有效卡片行（表头后每行都缺少标题）")
+    board = Board(
+        lists=[lists_by_title[t] for t in order],
+        name=fallback_title,
+    )
+    report = f"列表 {len(order)} · 卡片 {total}"
+    if skipped:
+        report += f" · 跳过 {skipped} 行"
+    return board, report
 
 
 def _last(lists: list[BoardList]) -> BoardList | None:

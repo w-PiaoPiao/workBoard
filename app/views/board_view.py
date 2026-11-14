@@ -3333,9 +3333,11 @@ class BoardView(QWidget):
     signal_settings_clicked = Signal()          # 打开设置界面
     signal_export = Signal(str)                 # "md" | "csv"
     signal_export_backup = Signal()             # 导出完整备份 .json
+    signal_export_workspace = Signal()          # 整仓备份导出 .zip（全部看板+模板+附件）
     signal_import_backup = Signal()             # 从备份导入（生成新看板）
     signal_import_trello = Signal()             # 导入 Trello 看板 JSON
     signal_import_markdown = Signal()           # 导入 Markdown 任务清单
+    signal_import_csv = Signal()                # 导入 CSV 任务清单
     signal_today_toggled = Signal(bool)         # 今日聚焦开关变化（菜单栏同步）
     signal_calendar_open = Signal()             # 打开日历视图
     signal_shortcuts_open = Signal()            # 打开快捷键速查
@@ -4594,8 +4596,10 @@ class BoardView(QWidget):
         act_csv = menu.addAction(tr("CSV（.csv）"))
         menu.addSeparator()
         act_backup = menu.addAction(tr("导出备份（.json）"))
-        act_import = menu.addAction(tr("从备份导入…"))
+        act_workspace = menu.addAction(tr("导出全部数据（.zip）"))
         menu.addSeparator()
+        act_import = menu.addAction(tr("从备份导入…"))
+        act_csv_import = menu.addAction(tr("导入 CSV（.csv）…"))
         act_trello = menu.addAction(tr("导入 Trello 看板（.json）…"))
         act_md_import = menu.addAction(tr("导入 Markdown（.md）…"))
         chosen = _popup_menu(menu, self._export_btn.mapToGlobal(
@@ -4607,8 +4611,12 @@ class BoardView(QWidget):
             self.signal_export.emit("csv")
         elif chosen is act_backup:
             self.signal_export_backup.emit()
+        elif chosen is act_workspace:
+            self.signal_export_workspace.emit()
         elif chosen is act_import:
             self.signal_import_backup.emit()
+        elif chosen is act_csv_import:
+            self.signal_import_csv.emit()
         elif chosen is act_trello:
             self.signal_import_trello.emit()
         elif chosen is act_md_import:

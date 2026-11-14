@@ -547,10 +547,17 @@ _zh_en: dict[str, str] = {
     # ── 导入（工具栏菜单）──
     "导入 Trello 看板（.json）…": "Import Trello board (.json)…",
     "导入 Markdown（.md）…": "Import Markdown (.md)…",
+    "导入 CSV（.csv）…": "Import CSV (.csv)…",
     "导入 Trello 看板…": "Import Trello Board…",
     "导入 Markdown…": "Import Markdown…",
+    "导入 CSV": "Import CSV",
     "导入 Trello 看板": "Import Trello Board",
     "导入 Markdown": "Import Markdown",
+    # ── 整仓备份导出（zip）──
+    "导出全部数据（.zip）": "Export all data (.zip)",
+    "导出全部数据": "Export All Data",
+    "备份失败：{err}": "Backup failed: {err}",
+    "已备份 {n} 个文件到 {path}": "Backed up {n} file(s) to {path}",
     # ── 卡片对话框：清单 / 附件 / 预览 / 重复 ──
     "清单": "Checklist",
     "添加清单项": "Add item",

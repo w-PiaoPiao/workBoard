@@ -35,6 +35,7 @@ from app import i18n
 from app.config import AppConfig, workdir_start_dir
 from app.i18n import priority_name, tr
 from app.models import json_io
+from app.models.backup import create_workspace_backup
 from app.models.board import (
     Board,
     BoardList,
@@ -42,7 +43,7 @@ from app.models.board import (
     Card,
     is_done_list_title,
 )
-from app.models.importers import board_from_markdown, board_from_trello
+from app.models.importers import board_from_csv, board_from_markdown, board_from_trello
 from app.models.quick_syntax import parse_quick_input
 from app.models.workspace import Workspace
 from app.services import autostart
@@ -768,6 +769,21 @@ class AppController(QObject):
             return
         self._activate_imported_board(board, Path(path).stem, report)
 
+    def _on_import_csv(self) -> None:
+        """导入 CSV 任务清单（本应用导出格式回读）→ 生成新看板"""
+        path, _ = QFileDialog.getOpenFileName(
+            self._window, tr("导入 CSV"), str(Path.home()), "CSV (*.csv)")
+        if not path:
+            return
+        try:
+            # utf-8-sig 兼容带 BOM 的导出文件（与 _write_export_csv 对齐）
+            text = Path(path).read_text(encoding="utf-8-sig")
+            board, report = board_from_csv(text, fallback_title=Path(path).stem)
+        except (OSError, ValueError, AttributeError, TypeError) as e:
+            self._show_error(tr("导入失败：{err}").format(err=e))
+            return
+        self._activate_imported_board(board, Path(path).stem, report)
+
     def _activate_imported_board(self, board: Board, fallback_name: str,
                                  report: str) -> None:
         if not board.name:
@@ -809,10 +825,13 @@ class AppController(QObject):
         self._board_view.signal_archive_open.connect(self._on_archive_open)
         self._board_view.signal_export.connect(self._on_export)
         self._board_view.signal_export_backup.connect(self._on_export_backup)
+        self._board_view.signal_export_workspace.connect(
+            self._on_export_workspace)
         self._board_view.signal_import_backup.connect(self._on_import_backup)
         self._board_view.signal_import_trello.connect(self._on_import_trello)
         self._board_view.signal_import_markdown.connect(
             self._on_import_markdown)
+        self._board_view.signal_import_csv.connect(self._on_import_csv)
         self._board_view.signal_calendar_open.connect(self._on_calendar_open)
         self._board_view.signal_shortcuts_open.connect(
             self._on_shortcuts_open)
@@ -3244,6 +3263,26 @@ class AppController(QObject):
             return
         self._notify(tr("备份已导出到 {path}").format(path=path))
 
+    def _on_export_workspace(self) -> None:
+        """整仓备份导出：数据目录打包为 zip（全部看板+模板+附件）
+
+        不含自动备份族（.prev/.snap/.corrupt/.good）与运行态文件；
+        恢复 = 解压覆盖数据目录（见 README），单看板走「从备份导入…」。
+        """
+        default = Path(str(AppConfig.DATA_DIR)) / \
+            f"桌宠看板全部数据备份_{date.today():%Y%m%d}.zip"
+        path, _ = QFileDialog.getSaveFileName(
+            self._window, tr("导出全部数据"), str(default), "ZIP (*.zip)")
+        if not path:
+            return
+        try:
+            count = create_workspace_backup(Path(path))
+        except (OSError, ValueError) as e:
+            self._show_error(tr("备份失败：{err}").format(err=e))
+            return
+        self._notify(tr("已备份 {n} 个文件到 {path}").format(n=count, path=path))
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(Path(path).parent)))
+
     def _on_import_backup(self) -> None:
         """从备份导入：整体数据读入并生成为一块新看板（不影响现有看板）"""
         path, _ = QFileDialog.getOpenFileName(
@@ -3317,8 +3356,11 @@ class AppController(QObject):
     def _write_export_csv(cls, path: Path, board) -> None:
         with path.open("w", encoding="utf-8-sig", newline="") as f:
             writer = csv.writer(f)
+            # 「重复间隔」列：自定义周期（repeat="custom"）的间隔天数，导入
+            # 端按列名匹配、缺列容忍（旧版导出文件没有这列也能读）
             writer.writerow(["列表", "标题", "备注", "标签", "截止日期",
-                             "完成", "优先级", "番茄数", "重复", "创建时间"])
+                             "完成", "优先级", "番茄数", "重复", "重复间隔",
+                             "创建时间"])
             for lst in board.lists:
                 for c in lst.cards:
                     if c.archived:
@@ -3332,7 +3374,9 @@ class AppController(QObject):
                         "是" if c.done else "否",
                         AppConfig.PRIORITY_NAMES.get(c.priority, ""),
                         c.pomodoros,
-                        AppConfig.REPEAT_NAMES.get(c.repeat, ""), c.created_at,
+                        AppConfig.REPEAT_NAMES.get(c.repeat, ""),
+                        c.repeat_interval if c.repeat == "custom" else "",
+                        c.created_at,
                     ])
 
     # ── 托盘 / 显隐 / 退出 ────────────────────────────────
