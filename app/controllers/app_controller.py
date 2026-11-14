@@ -45,6 +45,7 @@ from app.models.board import (
 )
 from app.models.importers import board_from_csv, board_from_markdown, board_from_trello
 from app.models.quick_syntax import parse_quick_input
+from app.models.stats import compute_stats
 from app.models.workspace import Workspace
 from app.services import autostart
 from app.services.global_hotkey import GlobalHotkeyService
@@ -179,6 +180,7 @@ class AppController(QObject):
         self._settings_dialog: SettingsDialog | None = None   # 惰性创建
         self._calendar_dialog = None                          # 惰性创建
         self._history_dialog = None                           # 历史版本（惰性创建）
+        self._stats_dialog = None                             # 统计视图（惰性创建）
         self._archive_key: tuple | None = None   # 归档内容指纹（按需重建用）
         self._tray_hint_shown = False          # "已最小化到托盘"只提示一次
         if app is not None:
@@ -607,6 +609,7 @@ class AppController(QObject):
         self._refresh_archive()   # 非模态归档/日历开着时残留旧板内容
         self._refresh_calendar()
         self._refresh_history()
+        self._refresh_stats()
         if notify:
             self._notify(notify)
         return True
@@ -835,6 +838,7 @@ class AppController(QObject):
             self._on_import_markdown)
         self._board_view.signal_import_csv.connect(self._on_import_csv)
         self._board_view.signal_calendar_open.connect(self._on_calendar_open)
+        self._board_view.signal_stats_open.connect(self._on_stats_open)
         self._board_view.signal_shortcuts_open.connect(
             self._on_shortcuts_open)
         # 多看板
@@ -1816,6 +1820,31 @@ class AppController(QObject):
         self._notify(tr("已恢复到 {time} 的快照").format(
             time=when.strftime("%Y-%m-%d %H:%M")))
 
+    # ── 统计视图 ──────────────────────────────────────────
+
+    def _on_stats_open(self) -> None:
+        """打开统计对话框：完成趋势 / 标签·列表分布 / 番茄统计"""
+        from app.views.stats_dialog import StatsDialog
+
+        if self._stats_dialog is None:
+            dlg = StatsDialog(self._window)
+            self._stats_dialog = dlg
+        self._refresh_stats()
+        self._stats_dialog.show()
+        self._stats_dialog.raise_()
+        self._stats_dialog.activateWindow()
+
+    def _refresh_stats(self) -> None:
+        """统计对话框开着时重算聚合（数据变更/切板/恢复后同步）"""
+        dlg = self._stats_dialog
+        if dlg is None:
+            return
+        board = self._store.load()
+        if any(lst.cards for lst in board.lists):
+            dlg.set_summary(compute_stats(board, date.today()))
+        else:
+            dlg.set_summary(None)
+
     def _on_calendar_due_change(self, card_id: str, iso_date: str) -> None:
         """日历拖放改期"""
         if not iso_date:
@@ -2109,6 +2138,9 @@ class AppController(QObject):
         # 日历视图可见时同步重取当月分布（拖放改期外的数据变更也反映）
         if self._calendar_dialog is not None and self._calendar_dialog.isVisible():
             self._refresh_calendar()
+        # 统计视图可见时同步重算（完成勾选/归档/撤销都改变统计口径）
+        if self._stats_dialog is not None and self._stats_dialog.isVisible():
+            self._refresh_stats()
         return stats
 
     def _notify(self, text: str) -> None:
@@ -2351,6 +2383,11 @@ class AppController(QObject):
             self._calendar_dialog.close()
             self._calendar_dialog.deleteLater()
             self._calendar_dialog = None
+        # 统计对话框同理（分区标题/空态是构造期快照）
+        if self._stats_dialog is not None:
+            self._stats_dialog.close()
+            self._stats_dialog.deleteLater()
+            self._stats_dialog = None
 
     # ── 主题 / 动画 ───────────────────────────────────────
 

@@ -587,6 +587,27 @@ _zh_en: dict[str, str] = {
     "恢复失败：快照文件无法读取":
         "Restore failed: the snapshot file can't be read",
     "已恢复到 {time} 的快照": "Restored to the snapshot at {time}",
+    # ── 统计视图 ──
+    "统计": "Stats",
+    "完成趋势、标签与列表分布、番茄统计":
+        "Completion trend, label/list breakdown, pomodoro stats",
+    "最近 30 天完成趋势": "Completions in the last 30 days",
+    "{date}：完成 {n} 张": "{date}: {n} completed",
+    "标签分布": "Label breakdown",
+    "列表分布": "List breakdown",
+    "番茄专注": "Pomodoros",
+    "总 {total} 张 · 完成 {done} 张 · 逾期 {overdue} 张 · "
+    "今日截止 {due_today} 张 · 今日完成 {done_today} 张":
+        "Total {total} · done {done} · overdue {overdue} · "
+        "due today {due_today} · done today {done_today}",
+    "本周完成 {this} 张 · 上周 {last} 张":
+        "This week {this} · last week {last}",
+    "还没有完成的番茄钟：右键卡片「开始专注」即可开始":
+        "No pomodoros yet: right-click a card and \"Start focus\" to begin",
+    "累计 {n} 个番茄": "{n} pomodoros in total",
+    "{title} ×{n}": "{title} ×{n}",
+    "还没有卡片数据：回到看板添加卡片后这里会出现统计":
+        "No cards yet: add some on the board and stats will appear here",
     # ── 卡片对话框：清单 / 附件 / 预览 / 重复 ──
     "清单": "Checklist",
     "添加清单项": "Add item",

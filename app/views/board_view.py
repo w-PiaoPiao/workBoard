@@ -3340,6 +3340,7 @@ class BoardView(QWidget):
     signal_import_csv = Signal()                # 导入 CSV 任务清单
     signal_today_toggled = Signal(bool)         # 今日聚焦开关变化（菜单栏同步）
     signal_calendar_open = Signal()             # 打开日历视图
+    signal_stats_open = Signal()                # 打开统计视图
     signal_shortcuts_open = Signal()            # 打开快捷键速查
     signal_card_duplicate = Signal(str)         # card_id（复制卡片）
     signal_card_attachment_open = Signal(str)   # card_id（打开首个附件）
@@ -3489,6 +3490,13 @@ class BoardView(QWidget):
         self._calendar_btn.clicked.connect(self.signal_calendar_open.emit)
         self._toolbar_layout.addWidget(self._calendar_btn)
 
+        self._stats_btn = QPushButton(tr("统计"))
+        self._stats_btn.setObjectName("boardToolBtn")
+        self._stats_btn.setCursor(Qt.PointingHandCursor)
+        self._stats_btn.setToolTip(tr("完成趋势、标签与列表分布、番茄统计"))
+        self._stats_btn.clicked.connect(self.signal_stats_open.emit)
+        self._toolbar_layout.addWidget(self._stats_btn)
+
         self._export_btn = QPushButton(tr("导出"))
         self._export_btn.setObjectName("boardToolBtn")
         self._export_btn.setCursor(Qt.PointingHandCursor)
@@ -3568,8 +3576,9 @@ class BoardView(QWidget):
         # 而「+ 添加列表」是空看板引导指向的唯一入口，放最后。
         # 「今日」与看板标题排在最后两级：标题的 88px 是剩余项里最宽的一个，
         # 而它同时有 tooltip 与「»」菜单两条退路——极窄窗口下唯一还能让的。
-        self._overflow_order = ("stats", "calendar", "bulk_add", "export",
-                                "archive", "add_list", "today", "title")
+        self._overflow_order = ("stats", "stats_view", "calendar",
+                                "bulk_add", "export", "archive", "add_list",
+                                "today", "title")
         # 搜索框的弹性范围：原始最小宽 → 硬下限。窄到下限仍放不下时，
         # 「今日」开关已被收进「»」菜单，工具栏不可能再重叠。
         self._search_min_w = tokens.size(120)
@@ -3583,6 +3592,7 @@ class BoardView(QWidget):
             ("bulk_add", self._bulk_add_btn),
             ("archive", self._archive_btn),
             ("calendar", self._calendar_btn),
+            ("stats_view", self._stats_btn),
             ("export", self._export_btn),
             ("settings", self._settings_btn),
             ("theme", self._theme_btn),
@@ -4902,6 +4912,7 @@ class BoardView(QWidget):
         """
         labels = {"calendar": tr("日历"), "export": tr("导出"),
                   "archive": tr("归档"), "add_list": tr("+ 添加列表"),
+                  "stats_view": tr("统计"),
                   # 「今日」按钮的 text() 是动态的（"今日 5"），进菜单要固定文案
                   "today": tr("今日聚焦"),
                   "title": tr("切换 / 管理看板")}
