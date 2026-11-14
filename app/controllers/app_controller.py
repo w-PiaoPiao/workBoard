@@ -10,7 +10,7 @@ import logging
 import shutil
 import time
 import uuid
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from PySide6.QtCore import QObject, Qt, QThreadPool, QTimer, QUrl, Signal
@@ -178,6 +178,7 @@ class AppController(QObject):
         self._archive_dialog: ArchiveDialog | None = None
         self._settings_dialog: SettingsDialog | None = None   # 惰性创建
         self._calendar_dialog = None                          # 惰性创建
+        self._history_dialog = None                           # 历史版本（惰性创建）
         self._archive_key: tuple | None = None   # 归档内容指纹（按需重建用）
         self._tray_hint_shown = False          # "已最小化到托盘"只提示一次
         if app is not None:
@@ -605,6 +606,7 @@ class AppController(QObject):
         self._apply_board_to_ui(board)
         self._refresh_archive()   # 非模态归档/日历开着时残留旧板内容
         self._refresh_calendar()
+        self._refresh_history()
         if notify:
             self._notify(notify)
         return True
@@ -1759,6 +1761,61 @@ class AppController(QObject):
                     due_map.setdefault(c.due_date, []).append(c)
         dlg.set_month(y, m, due_map)
 
+    # ── 历史版本（启动快照浏览与恢复）──────────────────────
+
+    def _on_history_open(self) -> None:
+        """打开历史版本对话框：浏览本看板的启动快照并恢复"""
+        from app.views.history_dialog import HistoryDialog
+
+        if self._history_dialog is None:
+            dlg = HistoryDialog(self._window)
+            dlg.signal_restore_requested.connect(self._on_restore_snapshot)
+            self._history_dialog = dlg
+        self._refresh_history()
+        self._history_dialog.show()
+        self._history_dialog.raise_()
+        self._history_dialog.activateWindow()
+
+    def _refresh_history(self) -> None:
+        """历史对话框开着时重注当前看板的快照清单（切板/恢复后同步）"""
+        dlg = self._history_dialog
+        if dlg is None:
+            return
+        dlg.set_items(json_io.list_snapshots(self._store.path))
+
+    def _on_restore_snapshot(self, snapshot_path: str) -> None:
+        """恢复到选中的启动快照（确认已在对话框内完成）
+
+        恢复前先为当前状态留一份新快照（可反悔）；与切板同款收口——
+        先等在途写收口再覆盖主文件，否则排队中的异步写会把恢复结果
+        冲掉。恢复源自身损坏由 restore_from_backup 二次校验拒绝。
+        """
+        snap = Path(snapshot_path)
+        if not snap.is_file():
+            self._show_error(tr("快照文件不存在（可能已被清理）"))
+            self._refresh_history()
+            return
+        if not self._save_pool.waitForDone(5000):
+            self._show_error(tr("看板仍在保存，请稍后重试"))
+            return
+        board = self._store.load()
+        json_io.snapshot_board(
+            self._store.path,
+            has_cards=any(lst.cards for lst in board.lists))
+        if not json_io.restore_from_backup(self._store.path, snap):
+            self._show_error(tr("恢复失败：快照文件无法读取"))
+            return
+        board = self._store.reload()
+        self._apply_board_to_ui(board)
+        self._store.mark_dirty()
+        self._schedule_save()
+        self._refresh_archive()
+        self._refresh_calendar()
+        self._refresh_history()
+        when = datetime.fromtimestamp(snap.stat().st_mtime)
+        self._notify(tr("已恢复到 {time} 的快照").format(
+            time=when.strftime("%Y-%m-%d %H:%M")))
+
     def _on_calendar_due_change(self, card_id: str, iso_date: str) -> None:
         """日历拖放改期"""
         if not iso_date:
@@ -2117,6 +2174,7 @@ class AppController(QObject):
                 AppConfig.save_default_view)
             dlg.signal_global_hotkey_toggled.connect(
                 self._on_global_hotkey_toggled)
+            dlg.signal_history_open.connect(self._on_history_open)
             i18n.register(dlg.retexts)          # 语言切换整页刷新
             AppTheme.register(dlg.reapply_theme)
             self._settings_dialog = dlg

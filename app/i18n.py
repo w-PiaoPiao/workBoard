@@ -558,6 +558,35 @@ _zh_en: dict[str, str] = {
     "导出全部数据": "Export All Data",
     "备份失败：{err}": "Backup failed: {err}",
     "已备份 {n} 个文件到 {path}": "Backed up {n} file(s) to {path}",
+    # ── 历史版本（启动快照浏览与恢复）──
+    "历史版本…": "History…",
+    "历史版本": "History",
+    "浏览启动快照并恢复到任一时刻（恢复前自动留档当前数据）":
+        "Browse startup snapshots and restore to any point "
+        "(the current data is snapshotted first)",
+    "打开文件夹": "Open Folder",
+    "在文件管理器中查看全部自动备份文件":
+        "See all auto backup files in your file manager",
+    "{n} B": "{n} B",
+    "{n} KB": "{n} KB",
+    "{n} MB": "{n} MB",
+    "列表 {l} · 卡片 {c}": "{l} list(s) · {c} card(s)",
+    "快照文件无法读取": "Snapshot file can't be read",
+    "共 {n} 份启动快照 · 恢复前会先为当前数据留一份新快照":
+        "{n} startup snapshot(s) · a new snapshot of the current data "
+        "is taken before restoring",
+    "暂无历史快照：启动或切换看板时自动留档":
+        "No snapshots yet: one is taken on every launch or board switch",
+    "恢复历史版本": "Restore Snapshot",
+    "把看板数据恢复到这份快照？当前数据会先自动留一份新快照，恢复后随时可以再恢复回来。":
+        "Restore the board to this snapshot? The current data is "
+        "snapshotted first, so you can restore again at any time.",
+    "快照文件不存在（可能已被清理）":
+        "Snapshot file no longer exists (it may have been rotated away)",
+    "看板仍在保存，请稍后重试": "Board is still saving, try again shortly",
+    "恢复失败：快照文件无法读取":
+        "Restore failed: the snapshot file can't be read",
+    "已恢复到 {time} 的快照": "Restored to the snapshot at {time}",
     # ── 卡片对话框：清单 / 附件 / 预览 / 重复 ──
     "清单": "Checklist",
     "添加清单项": "Add item",

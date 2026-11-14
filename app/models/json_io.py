@@ -272,6 +272,46 @@ def nonempty_snapshots(path: Path) -> list[Path]:
     return [p for p in reversed(_snapshot_paths(path)) if doc_has_cards(p)]
 
 
+def list_snapshots(path: Path) -> list[dict]:
+    """枚举启动快照（时间倒序），附供历史版本对话框展示的摘要
+
+    每项 {path, mtime, size, cards, lists, unreadable}。单个快照解析
+    失败不剔除——标记 unreadable=True 灰显（恢复入口对损坏快照仍有
+    restore_from_backup 的二次校验兜底，列表里保留可见便于排查）。
+    cards 统计含归档卡（快照是主文件的完整副本）。
+    """
+    items: list[dict] = []
+    for p in reversed(_snapshot_paths(path)):
+        try:
+            st = p.stat()
+        except OSError:
+            continue
+        cards = lists = -1
+        unreadable = False
+        try:
+            with p.open("r", encoding="utf-8") as f:
+                data = json.load(f)
+            raw_lists = data.get("lists") if isinstance(data, dict) else None
+            if not isinstance(raw_lists, list):
+                raise ValueError("快照缺少 lists 结构")
+            lists = len(raw_lists)
+            cards = sum(len(lst.get("cards") or [])
+                        for lst in raw_lists if isinstance(lst, dict))
+        except (OSError, json.JSONDecodeError, ValueError,
+                AttributeError, TypeError, RecursionError):
+            unreadable = True
+            cards = lists = -1
+        items.append({
+            "path": p,
+            "mtime": st.st_mtime,
+            "size": st.st_size,
+            "cards": cards,
+            "lists": lists,
+            "unreadable": unreadable,
+        })
+    return items
+
+
 def restore_from_backup(store_path: Path, backup: Path) -> bool:
     """把备份文件复制回数据文件路径并触发写盘。
 

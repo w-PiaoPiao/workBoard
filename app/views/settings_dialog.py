@@ -162,6 +162,7 @@ class SettingsDialog(QDialog):
     signal_always_top_toggled = Signal(bool)
     signal_remind_advance_changed = Signal(int)  # 截止提前提醒天数 0~3
     signal_auto_archive_changed = Signal(int)    # 已完成自动归档天数 0=关闭
+    signal_history_open = Signal()               # 打开历史版本（启动快照）对话框
     signal_autostart_toggled = Signal(bool)      # 开机自启动
     signal_global_hotkey_toggled = Signal(bool)  # 全局快捷键（仅 Windows）
 
@@ -374,6 +375,14 @@ class SettingsDialog(QDialog):
         self._dir_label.setObjectName("dirPath")
         self._dir_label.setWordWrap(True)
         self._sec_data._lay.addWidget(self._dir_label)
+        self._history_btn = QPushButton(tr("历史版本…"))
+        self._history_btn.setObjectName("ghostBtn")
+        self._history_btn.setCursor(Qt.PointingHandCursor)
+        self._history_btn.clicked.connect(self.signal_history_open.emit)
+        self._t_history, self._h_history = self._sec_data.add_row(
+            tr("历史版本"),
+            tr("浏览启动快照并恢复到任一时刻（恢复前自动留档当前数据）"),
+            self._history_btn)
         page.addWidget(self._sec_data)
 
         # 关于
@@ -560,6 +569,10 @@ class SettingsDialog(QDialog):
         self._h_data.setText(tr("看板数据与自动备份保存在"))
         self._dir_open_btn.setText(tr("打开目录"))
         self._dir_label.setText(str(AppConfig.DATA_DIR))
+        self._t_history.setText(tr("历史版本"))
+        self._h_history.setText(
+            tr("浏览启动快照并恢复到任一时刻（恢复前自动留档当前数据）"))
+        self._history_btn.setText(tr("历史版本…"))
         self._sec_about.retexts(tr("关于"))
         self._about_label.setText(
             f"{app_display_name()}  v{AppConfig.APP_VERSION}\n{tr(_ABOUT_LINE)}")
