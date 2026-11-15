@@ -124,7 +124,17 @@ FILL_ON_KEYS = {
 
 
 def _themes() -> dict:
-    return {"light": AppConfig.COLORS, "dark": AppConfig.DARK_COLORS}
+    """全部在用色表（主表 light/dark + 每个皮肤的 light/dark）
+
+    护栏必须覆盖**每一份实际会渲染的色表**：此前只测主表，5 个皮肤
+    10 份色表的文字/底色对比度完全没有断言——皮肤起草时虽逐色算过,
+    但没有护栏锁住,后续改色随时可能静默跌破门槛。
+    """
+    out = {"light": AppConfig.COLORS, "dark": AppConfig.DARK_COLORS}
+    for skin, spec in AppConfig.UI_SKINS.items():
+        for mode in ("light", "dark"):
+            out[f"{skin}/{mode}"] = spec[mode]
+    return out
 
 
 # ── 仍未达标项（棘轮：只能变少）───────────────────────────────
@@ -217,12 +227,15 @@ class FillTextAudit(unittest.TestCase):
         白字压深色 accent 只有 3.23:1、压 success 只有 1.99:1——这是"写死
         white"在深色主题下的系统性失败，不是个别位置的问题。
         """
-        dark = AppConfig.DARK_COLORS
-        for name in ("accent", "success", "danger"):
-            on = parse_color(dark[f"{name}_on"])
-            self.assertLess(
-                luminance(on), 0.5,
-                f"深色主题 {name}_on 应为深色文字，实测 {dark[f'{name}_on']}")
+        for theme_name, colors in _themes().items():
+            if not theme_name.endswith("/dark") and theme_name != "dark":
+                continue
+            for name in ("accent", "success", "danger"):
+                on = parse_color(colors[f"{name}_on"])
+                self.assertLess(
+                    luminance(on), 0.5,
+                    f"{theme_name} 的 {name}_on 应为深色文字，"
+                    f"实测 {colors[f'{name}_on']}")
 
 
 class TextOnSurfaceAudit(unittest.TestCase):
@@ -288,6 +301,16 @@ class LabelColorAudit(unittest.TestCase):
                 AppConfig.LABEL_COLORS[key][0],
                 AppConfig.DARK_LABEL_COLORS[key][0],
                 f"{key} 的深色底仍在复用浅色 pastel")
+
+    def test_skin_label_colors_meet_aa(self):
+        """皮肤标签色表（SKIN_LABEL_COLORS）逐表断言
+
+        各皮肤的标签底/前景是独立调过的（色条不与板底打架），同样要达标；
+        此前 10 份皮肤标签表没有任何对比度断言。
+        """
+        for skin, spec in AppConfig.SKIN_LABEL_COLORS.items():
+            for mode, table in spec.items():
+                self._check(table, f"{skin}/{mode}")
 
 
 class SurfacePairRatchet(unittest.TestCase):

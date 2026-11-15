@@ -226,6 +226,8 @@ def _board_qss(mode: str, scale: str = "normal",
     sh = _shape(skin)
     R = sh["radii"]
     bw = sh["border_width"]
+    # 选中/拖放强调态的边框：至少 2px（比悬停重的强调），随皮肤再增粗
+    sel_bw = max(2, bw)
     # 徽章形态（皮肤决定）：pill 药丸 / outline 描边药丸 / bar 与 text 无底。
     #
     # 无底形态是**故意**不做成"色底药丸"的：现在的平感有一半来自"每张卡
@@ -293,7 +295,7 @@ def _board_qss(mode: str, scale: str = "normal",
         }}
         QFrame#selectionBar {{
             background: {c['glass']};
-            border: 1px solid {c['border']};
+            border: {bw}px solid {c['border']};
             border-radius: {R['panel']}px;
         }}
         QLabel#selCount {{
@@ -425,7 +427,7 @@ def _board_qss(mode: str, scale: str = "normal",
            此前是一句不可点击的文字，且要按工具栏收纳状态改写文案。 */
         QFrame#emptyBoardPanel {{
             background: {c['glass_hover']};
-            border: 1px solid {c['border']};
+            border: {bw}px solid {c['border']};
             border-radius: {R['panel']}px;
         }}
         QLabel#emptyBoardTitle {{
@@ -471,11 +473,11 @@ def _board_qss(mode: str, scale: str = "normal",
         /* ── 列表列 ── */
         QFrame#listColumn {{
             background: {c['bg_panel']};
-            border: 1px solid {c['border']};
+            border: {bw}px solid {c['border']};
             border-radius: {R['shell']}px;
         }}
         QFrame#listColumn[drop="true"] {{
-            border: 2px solid {c['accent']};
+            border: {sel_bw}px solid {c['accent']};
         }}
         /* 拖拽插入指示线：条高仅 3px，Qt 会把圆角夹到短边的一半
            （1.5px），所以写 2px 还是 6px 渲染完全一致，取最近的 chip 档 */
@@ -537,16 +539,19 @@ def _board_qss(mode: str, scale: str = "normal",
         }}
 
         /* ── 卡片 ── */
+        /* 结构边框宽度跟随皮肤 border_width（与 theme.global_qss 同一约定）:
+           brutal 的 2.5px 黑描边此前只落到全局 QSS,列/卡仍是 1px——
+           皮肤规格里"粗描边"这一半在看板上失效。 */
         QFrame#cardFrame {{
             background: {c['bg_card']};
-            border: 1px solid {c['border']};
+            border: {bw}px solid {c['border']};
             border-radius: {R['card']}px;
         }}
         QFrame#cardFrame:hover {{
-            border: 1px solid {c['accent']};
+            border: {bw}px solid {c['accent']};
         }}
         QFrame#cardFrame[selected="true"] {{
-            border: 2px solid {c['accent']};
+            border: {sel_bw}px solid {c['accent']};
             background: {c['bg_hover']};
         }}
         QLabel#cardTitle {{
@@ -558,8 +563,11 @@ def _board_qss(mode: str, scale: str = "normal",
         }}
         QLabel#cardTitle[done="true"] {{
             color: {c['text_secondary']};
-            text-decoration: line-through;
         }}
+        /* 删除线不在这里：Qt QSS 从不支持 text-decoration（静默失效），
+           且 QSS 管理的 widget 每次 polish 都会按规则重建字体——任何
+           QFont.strikeOut 都会被抹掉/绕过。删除线由 _CardTitleLabel 用
+           richText <s> 承担（QTextDocument 绘制，跨皮肤可靠）。 */
         QPushButton#cardDeleteBtn {{
             background: {c['mask']};
             color: {c['text_primary']};
@@ -952,7 +960,10 @@ class CardWidget(QFrame):
         """标题完成态：动态属性驱动 QSS 选择器（[done="true"]）
 
         完成态用 text_secondary（而非更浅的 disabled），保证白卡上
-        删除线文字仍可读（对比度 ≥ 4.5:1）。
+        文字仍可读（对比度 ≥ 4.5:1）。删除线的老注释里的意图从未生效
+        （Qt QSS 从不支持 text-decoration，QFont.strikeOut 又会被 QSS
+        polish 重建抹掉、rich text 的渲染时序在构造期不可控——全部实测）；
+        完成态的显式载体是 meta 行的「已完成」徽章（见 rebuild）。
         """
         if self._title_label is None:
             return
@@ -1040,6 +1051,14 @@ class CardWidget(QFrame):
         # 底部信息行（截止日期 / 备注图标）
         meta_items: list[tuple[str, str, bool]] = []    # (文本, 主题色键, 是否备注徽章)
         self._meta_items_cache = meta_items
+        if card.done:
+            # 完成态的显式载体：标题变浅（[done="true"] 的 QSS）在粗体下
+            # 区分弱，而删除线在 Qt 里没有可靠实现（text-decoration 不被
+            # 支持 / QFont.strikeOut 被 QSS polish 抹掉 / rich text 渲染
+            # 时序不可控，均实测）——徽章走既有 QSS 徽章系统，跨皮肤稳定。
+            # 放在首位：对完成卡它比优先级/日期更核心，且 4 枚上限截断时
+            # 不该被挤掉
+            meta_items.append((tr("已完成"), "success", False))
         if card.priority:
             mark = AppConfig.PRIORITY_MARKS.get(card.priority, "")
             if mark:

@@ -403,11 +403,13 @@ class CardDialog(QDialog):
         row.addLayout(due_box, 1, 0)
 
         self._done_check = QCheckBox(tr("标记为已完成"))
+        self._done_check.setCursor(Qt.PointingHandCursor)
         if card:
             self._done_check.setChecked(card.done)
         row.addWidget(self._done_check, 1, 1)
 
         self._star_check = QCheckBox(tr("加入今日聚焦"))
+        self._star_check.setCursor(Qt.PointingHandCursor)
         self._star_check.setToolTip(
             tr("星标后卡片会出现在「今日聚焦」视图和桌宠角标中"))
         if card:
@@ -689,6 +691,7 @@ class CardDialog(QDialog):
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(6)
         check = QCheckBox()
+        check.setCursor(Qt.PointingHandCursor)
         check.setChecked(done)
         check.toggled.connect(self._update_check_progress)
         edit = _CheckItemEdit(text)
@@ -1050,6 +1053,7 @@ class CardDialog(QDialog):
             lay.setContentsMargins(6, 2, 6, 2)
             lay.setSpacing(6)
             check = QCheckBox()
+            check.setCursor(Qt.PointingHandCursor)
             check.setChecked(bool(step.get("done")))
             # 环节名是随卡快照的中文模板名，显示层翻译（历史数据也能本地化）
             name = QLabel(tr(step.get("name", "")))

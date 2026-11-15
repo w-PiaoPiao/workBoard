@@ -206,6 +206,22 @@ class BoardViewRefreshTest(unittest.TestCase):
         self.assertFalse(cw_b._card.done)
         self.assertFalse(cw_b._title_label.property("done"))
 
+    def test_done_card_shows_badge(self):
+        """完成卡在 meta 行带「已完成」徽章（success tone，跨皮肤可靠）
+
+        标题变浅（[done="true"]）在粗体下区分弱；删除线在 Qt 里没有可靠
+        实现（text-decoration 不被 QSS 支持 / QFont.strikeOut 被 polish
+        抹掉 / rich text 渲染时序不可控——均实测），徽章是显式载体。
+        """
+        cw = self.view._columns[0]._card_widgets[0]
+        tones = [t for _lbl, t in cw._meta_badges]
+        self.assertNotIn("success", tones)
+        cw._card.set_done(True)
+        cw.rebuild()
+        tones = [t for _lbl, t in cw._meta_badges]
+        self.assertEqual(tones[0], "success")   # 完成徽章排首位
+        self.assertIn("已完成", cw._meta_items_cache[0][0])
+
     def test_fingerprint_skips_rebuild(self):
         cw = self.view._columns[0]._card_widgets[0]
         # 同内容的新模型对象（模拟 reload）：不触发 rebuild

@@ -21,6 +21,7 @@
 from __future__ import annotations
 
 import os
+import re
 import sys
 import tempfile
 import unittest
@@ -292,6 +293,34 @@ class SkinSwitchTest(unittest.TestCase):
             qss = _board_qss("light", "normal", skin)
             self.assertIn(colors["bg_card"], qss,
                           f"{skin}: 看板 QSS 里找不到该皮肤卡片底色")
+
+    def test_board_qss_border_width_follows_skin(self):
+        """列/卡结构边框宽度跟随皮肤 border_width
+
+        brutal 的规格是 2.5px 黑描边:此前只有 theme.global_qss 跟随,
+        看板级 listColumn/cardFrame 写死 1px——同一皮肤下对话框按钮粗、
+        看板列卡细,且 hover/选中态边框比常态细(强调变弱)。
+        """
+        for skin, spec in AppConfig.UI_SKINS.items():
+            bw = spec["shape"]["border_width"]
+            qss = _board_qss("light", "normal", skin)
+            for name in ("listColumn", "cardFrame"):
+                self.assertIn(
+                    f"QFrame#{name} {{\n            background:",
+                    qss, f"{skin}: {name} 规则缺失")
+            self.assertRegex(
+                qss, r"QFrame#cardFrame \{[^}]*border: "
+                + re.escape(str(bw)) + r"px solid",
+                f"{skin}: cardFrame 边框未跟随 border_width={bw}")
+            self.assertRegex(
+                qss, r"QFrame#listColumn \{[^}]*border: "
+                + re.escape(str(bw)) + r"px solid",
+                f"{skin}: listColumn 边框未跟随 border_width={bw}")
+            sel_bw = max(2, bw)
+            self.assertRegex(
+                qss, r"QFrame#cardFrame\[selected=\"true\"\] \{[^}]*border: "
+                + re.escape(str(sel_bw)) + r"px solid",
+                f"{skin}: 选中态边框未达 {sel_bw}px")
 
     def test_radius_tokens_are_skin_aware(self):
         # 直角皮肤：圆角可缩到 0（密度下限只挡"退化的负值"，不挡直角）
