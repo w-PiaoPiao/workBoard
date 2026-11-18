@@ -457,7 +457,8 @@ UI_RADIUS_CHIP   = 6    # 徽章 / 色块 / 键帽
 
 ### 明确不动（两轮审计共同确认）
 
-`_CardCheckButton` 的 140ms 勾选动画；`[done="true"]` 删除线 + 文档化的对比度理由；
+`_CardCheckButton` 的 140ms 勾选动画；`[done="true"]` 的对比度理由（完成态**不用**删除线，
+用户口径：灰标题 + 「已完成」徽章足够，`tests/test_board_view.py` 有回归断言）；
 拖放目标语言（列 2px 边框 / 3px 插入线 / `dropTarget` 填充 / 成组拖影张数）；
 过滤反馈（命中/总数、`_pinned_ids`、拖放被禁时给 toast 说明而非静默禁止）；
 Esc 逐级链（重命名 → 多选 → 搜索 → 收起）；`motion.enabled()` 的全量门控；

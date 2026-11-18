@@ -451,8 +451,8 @@ class CardCheckButton(QPushButton):
         self.setCursor(Qt.PointingHandCursor)
         self.setToolTip(tr("点击切换完成状态"))
         # 可 check：QPushButton 不可 check 时读屏只报 "button"，
-        # 永远不报勾选状态——完成与否只由删除线和绿底承载，非视觉用户
-        # 拿不到这个信息。setCheckable 让 QAccessible 暴露 checked。
+        # 永远不报勾选状态——完成与否只由绿底对勾承载（标题不做删除线），
+        # 非视觉用户拿不到这个信息。setCheckable 让 QAccessible 暴露 checked。
         self.setCheckable(True)
         self.setAccessibleName(tr("切换完成状态"))
         self._done = False

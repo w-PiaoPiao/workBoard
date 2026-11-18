@@ -209,9 +209,9 @@ class BoardViewRefreshTest(unittest.TestCase):
     def test_done_card_shows_badge(self):
         """完成卡在 meta 行带「已完成」徽章（success tone，跨皮肤可靠）
 
-        标题变浅（[done="true"]）在粗体下区分弱；删除线在 Qt 里没有可靠
-        实现（text-decoration 不被 QSS 支持 / QFont.strikeOut 被 polish
-        抹掉 / rich text 渲染时序不可控——均实测），徽章是显式载体。
+        标题转次要色（[done="true"]）在粗体下区分弱；删除线是产品明确
+        不要的（QSS 其实支持，见 test_done_card_has_no_strikethrough），
+        所以徽章是完成态的显式载体。
         """
         cw = self.view._columns[0]._card_widgets[0]
         tones = [t for _lbl, t in cw._meta_badges]
@@ -221,6 +221,21 @@ class BoardViewRefreshTest(unittest.TestCase):
         tones = [t for _lbl, t in cw._meta_badges]
         self.assertEqual(tones[0], "success")   # 完成徽章排首位
         self.assertIn("已完成", cw._meta_items_cache[0][0])
+
+    def test_done_card_has_no_strikethrough(self):
+        """完成态不打删除线（产品口径）：灰标题 + 「已完成」徽章即可
+
+        Qt 的 QSS 其实是支持删除线的（text-decoration 会落到 QLabel 的
+        字体上，实测 strikeOut 变 True）——此前板级规则带着它，卡片拖进
+        「已完成」列就被整行划掉，用户明确要求去掉。这里锁死两头：
+        样式表里不再有该规则，完成卡的标题字体也绝不带 strikeOut。
+        """
+        cw = self.view._columns[0]._card_widgets[0]
+        cw._card.set_done(True)
+        cw.rebuild()
+        self.assertTrue(cw._title_label.property("done"))
+        self.assertNotIn("line-through", self.view.styleSheet())
+        self.assertFalse(cw._title_label.font().strikeOut())
 
     def test_fingerprint_skips_rebuild(self):
         cw = self.view._columns[0]._card_widgets[0]

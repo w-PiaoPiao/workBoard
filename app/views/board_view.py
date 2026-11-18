@@ -564,10 +564,11 @@ def _board_qss(mode: str, scale: str = "normal",
         QLabel#cardTitle[done="true"] {{
             color: {c['text_secondary']};
         }}
-        /* 删除线不在这里：Qt QSS 从不支持 text-decoration（静默失效），
-           且 QSS 管理的 widget 每次 polish 都会按规则重建字体——任何
-           QFont.strikeOut 都会被抹掉/绕过。删除线由 _CardTitleLabel 用
-           richText <s> 承担（QTextDocument 绘制，跨皮肤可靠）。 */
+        /* 完成态刻意不加删除线（产品口径）：标题转次要色 + meta 行的
+           「已完成」徽章就是全部区分。注意 Qt 的 QSS 其实**支持**删除线
+           （text-decoration 会落到 QLabel 字体上，实测生效）——此前本规则
+           里带着它，卡片拖进「已完成」列就被整行划掉，用户明确不要，
+           别再带回来（tests/test_board_view.py 有回归断言）。 */
         QPushButton#cardDeleteBtn {{
             background: {c['mask']};
             color: {c['text_primary']};
@@ -960,10 +961,10 @@ class CardWidget(QFrame):
         """标题完成态：动态属性驱动 QSS 选择器（[done="true"]）
 
         完成态用 text_secondary（而非更浅的 disabled），保证白卡上
-        文字仍可读（对比度 ≥ 4.5:1）。删除线的老注释里的意图从未生效
-        （Qt QSS 从不支持 text-decoration，QFont.strikeOut 又会被 QSS
-        polish 重建抹掉、rich text 的渲染时序在构造期不可控——全部实测）；
-        完成态的显式载体是 meta 行的「已完成」徽章（见 rebuild）。
+        文字仍可读（对比度 ≥ 4.5:1）。**不打删除线**是产品口径：QSS 的
+        text-decoration 其实能划掉标题（实测会落到字体上，旧规则确实划线，
+        用户要求去掉），完成态的显式载体改为 meta 行的「已完成」徽章
+        （见 rebuild）。
         """
         if self._title_label is None:
             return
@@ -1052,10 +1053,9 @@ class CardWidget(QFrame):
         meta_items: list[tuple[str, str, bool]] = []    # (文本, 主题色键, 是否备注徽章)
         self._meta_items_cache = meta_items
         if card.done:
-            # 完成态的显式载体：标题变浅（[done="true"] 的 QSS）在粗体下
-            # 区分弱，而删除线在 Qt 里没有可靠实现（text-decoration 不被
-            # 支持 / QFont.strikeOut 被 QSS polish 抹掉 / rich text 渲染
-            # 时序不可控，均实测）——徽章走既有 QSS 徽章系统，跨皮肤稳定。
+            # 完成态的显式载体：标题转次要色（[done="true"]）之外，再用
+            # 既有 QSS 徽章系统加一枚 success 色「已完成」徽章——跨皮肤
+            # 稳定，且不靠删除线（产品明确不要划线，见 _style_title）。
             # 放在首位：对完成卡它比优先级/日期更核心，且 4 枚上限截断时
             # 不该被挤掉
             meta_items.append((tr("已完成"), "success", False))
