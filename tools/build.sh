@@ -33,9 +33,21 @@ if ! "$PY" -c "import PySide6, PyInstaller" >/dev/null 2>&1; then
     exit 1
 fi
 
+# 许可文件随包分发：应用内「开源许可」从 Contents/Resources/app/resources/licenses
+# 读取（app/services/licensing.py 按 sys._MEIPASS 定位）。另有一份人类可读的
+# 副本在 Contents/Resources/license/（见下方打包后步骤）。
+data_args=(
+    --add-data "LICENSE:app/resources/licenses"
+    --add-data "THIRD_PARTY_NOTICES.md:app/resources/licenses"
+)
+for lic in LICENSES/*.txt; do
+    data_args+=(--add-data "$lic:app/resources/licenses")
+done
+
 "$PY" -m PyInstaller --windowed \
     --name "$name" \
     --icon "assets/app.icns" \
+    "${data_args[@]}" \
     --exclude-module PySide6.QtWebEngineCore \
     --exclude-module PySide6.QtWebEngineWidgets \
     --exclude-module PySide6.QtQml \
@@ -93,6 +105,12 @@ rm -rf "dist/$name"
     "$app_path/Contents/Info.plist" 2>/dev/null \
     || /usr/libexec/PlistBuddy -c "Set :LSUIElement true" \
         "$app_path/Contents/Info.plist"
+
+# 许可声明随 .app 分发（Qt/PySide6 为 LGPLv3，见 THIRD_PARTY_NOTICES.md）
+lic_dir="$app_contents/Resources/license"
+mkdir -p "$lic_dir"
+cp LICENSE THIRD_PARTY_NOTICES.md "$lic_dir"/
+cp -R LICENSES "$lic_dir"/
 
 # 清理删除了 bundle 内文件，原 ad-hoc 签名已失效，重签保证可启动
 codesign --force --deep --sign - "$app_path" 2>/dev/null

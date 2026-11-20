@@ -61,7 +61,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit 1 }
           for ($i = 0; $i -lt 30; $i++) {
             # 产物名已是 ASCII（peTTrello-v0.1.0.exe），资产名沿用文件 basename
-            gh release upload $tag dist/*.exe --clobber
+            # -licenses.zip 含 LICENSE / THIRD_PARTY_NOTICES / LGPL 全文，随 exe 一起发
+            gh release upload $tag dist/*.exe dist/*-licenses.zip --clobber
             if ($LASTEXITCODE -eq 0) { break }
             Start-Sleep -Seconds 10
           }

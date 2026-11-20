@@ -3664,11 +3664,11 @@ class BoardView(QWidget):
         self._empty_title.setObjectName("emptyBoardTitle")
         self._empty_title.setAlignment(Qt.AlignCenter)
         self._empty_sub = QLabel(
-            tr("创建第一列开始整理，或从模板 / Trello 导入"))
+            tr("创建第一列开始整理，或从模板 / 外部看板导入"))
         self._empty_sub.setObjectName("emptyBoardSub")
         self._empty_sub.setAlignment(Qt.AlignCenter)
         self._empty_sub.setWordWrap(True)
-        # 给面板一个下限宽，否则说明文字会折成"…Trello / 导入"这种孤字换行
+        # 给面板一个下限宽，否则说明文字会折成"… / 导入"这种孤字换行
         self._empty_sub.setMinimumWidth(tokens.size(300))
         self._empty_cta = QPushButton(tr("创建第一列"))
         self._empty_cta.setObjectName("emptyCtaBtn")
@@ -3913,7 +3913,7 @@ class BoardView(QWidget):
         if lights is not None:
             lights.reapply_texts()
         self._empty_title.setText(tr("看板还是空的"))
-        self._empty_sub.setText(tr("创建第一列开始整理，或从模板 / Trello 导入"))
+        self._empty_sub.setText(tr("创建第一列开始整理，或从模板 / 外部看板导入"))
         self._empty_cta.setText(tr("创建第一列"))
         self._sync_overflow_menu()      # 「»」菜单项文案随语言刷新
         for col in self._columns:
@@ -4629,7 +4629,7 @@ class BoardView(QWidget):
         menu.addSeparator()
         act_import = menu.addAction(tr("从备份导入…"))
         act_csv_import = menu.addAction(tr("导入 CSV（.csv）…"))
-        act_trello = menu.addAction(tr("导入 Trello 看板（.json）…"))
+        act_trello = menu.addAction(tr("导入外部看板（.json）…"))
         act_md_import = menu.addAction(tr("导入 Markdown（.md）…"))
         chosen = _popup_menu(menu, self._export_btn.mapToGlobal(
             QPoint(0, self._export_btn.height() + 2)))

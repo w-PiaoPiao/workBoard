@@ -268,8 +268,8 @@ _zh_en: dict[str, str] = {
     "界面密度": "Interface density",
     # ── 空看板引导（阶段 6 改为可点击面板）──
     "看板还是空的": "The board is empty",
-    "创建第一列开始整理，或从模板 / Trello 导入":
-        "Create your first list, or import from a template / Trello",
+    "创建第一列开始整理，或从模板 / 外部看板导入":
+        "Create your first list, or import from a template / external board",
     "创建第一列": "Create first list",
     "字号 / 间距 / 圆角一起缩放，立即生效":
         "Scales text, spacing and corner radius together — applies immediately",
@@ -545,14 +545,25 @@ _zh_en: dict[str, str] = {
     "已导入为新看板「{name}」": "Imported as new board \"{name}\"",
     "导入失败：{err}": "Import failed: {err}",
     # ── 导入（工具栏菜单）──
-    "导入 Trello 看板（.json）…": "Import Trello board (.json)…",
+    "导入外部看板（.json）…": "Import external board (.json)…",
     "导入 Markdown（.md）…": "Import Markdown (.md)…",
     "导入 CSV（.csv）…": "Import CSV (.csv)…",
-    "导入 Trello 看板…": "Import Trello Board…",
+    "导入外部看板…": "Import External Board…",
     "导入 Markdown…": "Import Markdown…",
     "导入 CSV": "Import CSV",
-    "导入 Trello 看板": "Import Trello Board",
+    "导入外部看板": "Import External Board",
     "导入 Markdown": "Import Markdown",
+    # ── 开源许可（设置 → 关于）──
+    "开源许可": "Open-source licenses",
+    "应用本体 MIT；内置 Qt / PySide6（LGPL-3.0）等第三方组件":
+        "App code is MIT; bundles Qt / PySide6 (LGPL-3.0) and other components",
+    "查看许可证…": "View licenses…",
+    "第三方组件与许可声明": "Third-party components & license notices",
+    "本应用（MIT 许可）": "This app (MIT License)",
+    "未找到许可文件": "License files not found",
+    "许可文本与第三方声明随安装包一同分发":
+        "License texts and third-party notices ship with the installer",
+    "读取许可文件失败：{err}": "Failed to read license file: {err}",
     # ── 整仓备份导出（zip）──
     "导出全部数据（.zip）": "Export all data (.zip)",
     "导出全部数据": "Export All Data",

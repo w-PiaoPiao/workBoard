@@ -391,6 +391,15 @@ class SettingsDialog(QDialog):
         self._about_label.setObjectName("aboutLabel")
         self._about_label.setWordWrap(True)
         self._sec_about._lay.addWidget(self._about_label)
+        # 开源许可：Qt/PySide6 以 LGPLv3 分发，文本随包提供，这里给入口
+        self._license_btn = QPushButton(tr("查看许可证…"))
+        self._license_btn.setObjectName("ghostBtn")
+        self._license_btn.setCursor(Qt.PointingHandCursor)
+        self._license_btn.clicked.connect(self._open_license_dialog)
+        self._t_license, self._h_license = self._sec_about.add_row(
+            tr("开源许可"),
+            tr("应用本体 MIT；内置 Qt / PySide6（LGPL-3.0）等第三方组件"),
+            self._license_btn)
         page.addWidget(self._sec_about)
 
         page.addStretch(1)
@@ -576,6 +585,10 @@ class SettingsDialog(QDialog):
         self._sec_about.retexts(tr("关于"))
         self._about_label.setText(
             f"{app_display_name()}  v{AppConfig.APP_VERSION}\n{tr(_ABOUT_LINE)}")
+        self._t_license.setText(tr("开源许可"))
+        self._h_license.setText(
+            tr("应用本体 MIT；内置 Qt / PySide6（LGPL-3.0）等第三方组件"))
+        self._license_btn.setText(tr("查看许可证…"))
         self._done_btn.setText(tr("完成"))
         # 读屏名与行标题同源：标题刚刷新过，这里补一次同步
         for section in (self._sec_appearance, self._sec_language, self._sec_pet,
@@ -607,6 +620,12 @@ class SettingsDialog(QDialog):
     def _open_data_dir(self) -> None:
         AppConfig.ensure_data_dir()
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(AppConfig.DATA_DIR)))
+
+    def _open_license_dialog(self) -> None:
+        """打开「开源许可」面板（延迟导入：设置页打开路径不必加载许可全文）"""
+        from app.views.license_dialog import LicenseDialog
+
+        LicenseDialog(self).exec()
 
     @staticmethod
     def _build_qss() -> str:

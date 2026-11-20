@@ -1,3 +1,42 @@
+<!--
+发布文案规范：产品名统一写「桌宠看板 / peTTrello」，不要再用「Trello 风格看板」
+作为卖点（Trello 是 Atlassian 的商标，仅可在「导入 Trello 导出的 JSON」这类互操作
+描述里提及）。v1.0.0 起首段改用「清爽的 Kanban 看板」；v0.5.0 及更早的历史条目
+保持原样，不要回改。发布时请一并附上 LICENSE / THIRD_PARTY_NOTICES.md /
+LICENSES（打包脚本已自动放进产物，单文件版附带 *-licenses.zip）。
+-->
+
+### 桌宠看板 v1.0.0
+
+Windows / macOS **桌面悬浮小工具**：缩小时是一只卡通桌宠，展开是清爽的 Kanban 看板。
+
+> 第一个可对外分发的正式版本，重点是**合规与品牌**：MIT 许可 + 第三方声明、
+> 应用内许可面板、界面文案去 Trello 品牌，打包与发布链路一并补齐。
+
+**开源合规**
+
+- 仓库以 **MIT** 许可发布（`LICENSE`），并补齐 Qt / PySide6（LGPL-3.0）、
+  Python（PSF）、appdirs / openpyxl（MIT）等第三方声明：`THIRD_PARTY_NOTICES.md`、
+  `LICENSES/`（含 LGPLv3 / GPLv3 全文）。
+- 设置 →「关于」→ **查看许可证…**：应用内直接浏览第三方声明与各许可全文，
+  不必去翻发布包（打包时文本内嵌在程序里，源码运行时读仓库根）。
+- 打包产物自动附带许可文件：便携目录版解压即见；单文件版随
+  `peTTrello-v{版本号}-licenses.zip` 分发；Release workflow 一并上传声明包。
+- 对外分发优先推荐便携目录版：其中 Qt/PySide6 库为独立 `Qt6*.dll`，可替换为
+  接口兼容的修改版，满足 LGPLv3 对「组合作品」的可重链接要求。
+
+**品牌与文案**
+
+- 仓库更名为 **workBoard**；README / 发布说明的卖点改用「Kanban 看板」。
+- 界面文案去除 Trello 字样：空看板引导、导入菜单、文件对话框、导入报错统一
+  改称「外部看板」；Trello 仅保留在「导入 Trello 导出的 JSON」等互操作说明中。
+
+**工程与文档**
+
+- 版本号规则落地：前两位由维护者决定，修订号按更新规模递增（见 `AGENTS.md` / README）。
+- 修正 README 中过期的打包产物命名（`peTTrello-v{版本号}`）。
+- 新增 `tests/test_license_dialog.py`：覆盖许可文件发现、列表填充与全文渲染。
+
 ### 桌宠看板 v0.5.0
 
 Windows / macOS **桌面悬浮小工具**：缩小时是一只卡通桌宠，展开是清爽的 Trello 风格看板。

@@ -1,6 +1,6 @@
 # 桌宠看板
 
-Windows / macOS 桌面悬浮小工具：**缩小时是一只卡通桌宠，展开是高颜值 Trello 风格看板**。
+Windows / macOS 桌面悬浮小工具：**缩小时是一只卡通桌宠，展开是清爽的 Kanban 看板**。
 
 ## 功能
 
@@ -183,7 +183,10 @@ python main.py --debug    # 调试日志
 powershell -ExecutionPolicy Bypass -File tools\build.ps1
 ```
 
-产物命名：`桌宠看板v{版本号}.exe`（版本号见 `app/config.py` 的 `APP_VERSION`）。
+产物命名：`dist/peTTrello-v{版本号}.exe`（版本号见 `app/config.py` 的 `APP_VERSION`）；
+便携目录版加 `--onedir`：`python tools/build_app.py --onedir`，产出
+`dist/peTTrello-v{版本号}-portable/` 与同名 `.zip`，另有 `*-licenses.zip`
+（单文件版分发时附带的第三方许可声明包）。
 
 ### macOS
 
@@ -192,7 +195,19 @@ pip install pyinstaller   # 如未安装
 bash tools/build.sh
 ```
 
-产物：`dist/桌宠看板v{版本号}.app`。已设置 `LSUIElement`，运行时不占 Dock，交互经由桌宠本体与菜单栏图标。
+产物：`dist/peTTrello-v{版本号}.app`。已设置 `LSUIElement`，运行时不占 Dock，交互经由桌宠本体与菜单栏图标。
+
+### 版本号规则
+
+版本号格式 `主版本.次版本.修订号`，唯一来源是 `app/config.py` 的 `APP_VERSION`：
+
+- **前两位**只由维护者明确要求时变更（如「升到 1.0.0」「升到 1.1」），其他情况保持不动；
+- **第三位**按单次更新规模递增，不递减、不自动进位：
+  - `+1`：缺陷修复、文案 / 文档改动、单点小改；
+  - `+2`：小功能，或 2～4 处相关改动；
+  - `+3`～`+5`：中等功能批次（跨模块、有行为变化）；
+  - `+6`～`+9`：同一主/次版本内的大批次（功能面广，涉及数据、打包或兼容性）；
+  - 累计到 `+9` 仍不进位——需要升次版本时由维护者确认。
 
 ## 测试
 
@@ -236,6 +251,7 @@ app/
     tray_service.py            系统托盘（图标绘制、显示/隐藏菜单、通知、稍后提醒）
     global_hotkey.py           全局快捷键（Windows RegisterHotKey，无第三方依赖）
     autostart.py               开机自启动登记（注册表 / LaunchAgent / XDG autostart）
+    licensing.py               许可文件定位（源码运行读仓库根 / 打包读解包目录）
   views/
     pet_view.py                桌宠（QPainter 绘制 + 属性动画）
     board_view.py              看板（列表列、卡片、拖拽、多选、看板切换、工具栏）
@@ -245,6 +261,7 @@ app/
     stats_dialog.py            统计视图（自绘趋势柱状图 + 分布比例条）
     history_dialog.py          历史版本（启动快照浏览与一键恢复）
     shortcuts_dialog.py        快捷键速查面板（? 呼出）
+    license_dialog.py          开源许可面板（第三方声明 + 各许可全文）
     quick_add_dialog.py        快速添加 / 批量添加对话框（速记实时预览）
     settings_dialog.py         设置界面（外观/语言/桌宠/窗口/提醒/数据/关于）
     controls.py                设置控件（滑动开关 / 分段按钮）
@@ -297,4 +314,26 @@ board.json           旧版单看板文件（迁移后不再写入，仅留档�
 - **请只使用最新构建版本的程序，删除/停止使用旧版本 exe**——仓库成形前的旧版
   曾以非原子方式覆盖数据文件（无备份、无恢复提示），是历史数据丢失的原因；
 - 保存失败（磁盘满/权限问题）会通过托盘通知提示，不会静默丢写。
+
+## 许可证
+
+本项目本体采用 [MIT 许可证](LICENSE)，版权归 w-PiaoPiao 所有。
+
+分发产物内含 Qt / PySide6（LGPLv3）、Python（PSF-2.0）等第三方组件，组件
+清单、源码获取方式与合规安排见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)，
+许可全文在 [LICENSES/](LICENSES/)。构建脚本会把这些文件一并放进发布产物：
+
+- **便携目录版**：`LICENSE`、`THIRD_PARTY_NOTICES.md`、`LICENSES/` 复制进
+  `dist/<名称>-portable/` 后一起压缩，解压即见；
+- **单文件版**：额外产出 `dist/<名称>-licenses.zip`，分发 exe 时请一并附上
+  （onefile 无法把许可文本放进单个 exe）；
+- **macOS**：许可文件放入 `.app/Contents/Resources/license/`。
+
+这些文本同时打进程序内部，**设置 →「关于」→「查看许可证…」** 可直接在应用内
+浏览第三方声明与各许可全文（源码运行时读仓库根的同名文件）。
+
+对外分发建议优先用便携目录版：其中 Qt/PySide6 的库是独立的 `Qt6*.dll`
+（macOS 为 framework），用户可替换为接口兼容的修改版，满足 LGPLv3 对
+「组合作品」的可重链接要求；单文件 exe 内的 Qt 库无法直接替换，仅作便捷
+分发形态。
 

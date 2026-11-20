@@ -743,9 +743,9 @@ class AppController(QObject):
         self._notify(tr("已删除看板"))
 
     def _on_import_trello(self) -> None:
-        """导入 Trello 看板导出 JSON → 生成新看板"""
+        """导入外部看板 JSON（Trello 导出格式）→ 生成新看板"""
         path, _ = QFileDialog.getOpenFileName(
-            self._window, tr("导入 Trello 看板"), str(Path.home()),
+            self._window, tr("导入外部看板"), str(Path.home()),
             "JSON (*.json)")
         if not path:
             return
@@ -2496,7 +2496,7 @@ class AppController(QObject):
         act_csv.triggered.connect(lambda: self._on_export("csv"))
         m_file.addAction(act_csv)
         m_file.addSeparator()
-        act_trello = _act("导入 Trello 看板…")
+        act_trello = _act("导入外部看板…")
         act_trello.triggered.connect(self._on_import_trello)
         m_file.addAction(act_trello)
         act_md_import = _act("导入 Markdown…")

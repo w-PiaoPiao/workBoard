@@ -24,6 +24,7 @@ import re
 import shutil
 import subprocess
 import sys
+import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -85,7 +86,7 @@ a = Analysis(
     [{entry!r}],
     pathex=[],
     binaries=[],
-    datas=[],
+    datas={datas!r},
     hiddenimports=[],
     hookspath=[],
     hooksconfig={{}},
@@ -150,7 +151,7 @@ a = Analysis(
     [{entry!r}],
     pathex=[],
     binaries=[],
-    datas=[],
+    datas={datas!r},
     hiddenimports=[],
     hookspath=[],
     hooksconfig={{}},
@@ -201,6 +202,74 @@ coll = COLLECT(
 '''
 
 
+# ── 许可声明 ─────────────────────────────────────────────────
+# 发布物含 Qt/PySide6（LGPLv3）、Python（PSF-2.0）等第三方组件，分发二进制
+# 时必须附带许可文本与通知（详见 THIRD_PARTY_NOTICES.md）。这些文件跟着
+# 产物走，避免"exe 发出去、声明留在仓库里"。
+LICENSE_FILES = ("LICENSE", "THIRD_PARTY_NOTICES.md")
+LICENSE_DIRS = ("LICENSES",)
+
+
+def _license_entries() -> list[Path]:
+    """要随包分发的许可文件/目录；缺失时只警告，不让打包失败"""
+    entries: list[Path] = []
+    for rel in LICENSE_FILES:
+        p = ROOT / rel
+        if p.is_file():
+            entries.append(p)
+        else:
+            print(f"警告: 缺少 {rel}，发布产物将不含许可声明")
+    for rel in LICENSE_DIRS:
+        p = ROOT / rel
+        if p.is_dir():
+            entries.append(p)
+        else:
+            print(f"警告: 缺少 {rel}/，发布产物将不含第三方许可全文")
+    return entries
+
+
+def _copy_license_bundle(dest_dir: Path) -> None:
+    """把许可声明复制进发布目录（便携目录版，压缩前调用）"""
+    dest_dir = Path(dest_dir)
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    for src in _license_entries():
+        dest = dest_dir / src.name
+        if src.is_dir():
+            shutil.copytree(src, dest, dirs_exist_ok=True)
+        else:
+            shutil.copy2(src, dest)
+
+
+def _write_license_zip(path: Path) -> None:
+    """onefile 版：许可声明单独打 zip，分发 exe 时一并提供"""
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as zf:
+        for src in _license_entries():
+            if src.is_dir():
+                for f in sorted(src.rglob("*")):
+                    if f.is_file():
+                        zf.write(f, f.relative_to(ROOT).as_posix())
+            else:
+                zf.write(src, src.name)
+
+
+def _license_datas() -> list[tuple[str, str]]:
+    """许可文件随包打进 app/resources/licenses/（应用内「开源许可」读取）
+
+    onefile 的 EXE 与 onedir 的 _internal 都由 PyInstaller 解包到
+    sys._MEIPASS，app/services/licensing.py 按该路径定位，两种形态通用。
+    """
+    out: list[tuple[str, str]] = []
+    for rel in LICENSE_FILES:
+        p = ROOT / rel
+        if p.is_file():
+            out.append((str(p), "app/resources/licenses"))
+    lic_dir = ROOT / "LICENSES"
+    if lic_dir.is_dir():
+        out.extend((str(p), "app/resources/licenses")
+                   for p in sorted(lic_dir.glob("*.txt")) if p.is_file())
+    return out
+
+
 def _read_app_version() -> str:
     cfg = (ROOT / "app" / "config.py").read_text(encoding="utf-8")
     match = re.search(r'APP_VERSION = "([^"]+)"', cfg)
@@ -230,6 +299,7 @@ def main() -> int:
         entry=str(ROOT / "main.py"),
         name=name,
         icon=str(ROOT / "assets" / "app.ico"),
+        datas=_license_datas(),
     )
     spec_path = ROOT / "build_app.generated.spec"
     spec_path.write_text(spec, encoding="utf-8")
@@ -250,12 +320,19 @@ def main() -> int:
         (DIST / name / "portable.marker").write_text(
             "便携目录版：数据保存在同级 data/ 目录，可整个文件夹搬移\n",
             encoding="utf-8")
+        # 许可声明跟着产物走，压缩前放进目录（QT 为 LGPLv3，见 README「许可证」）
+        _copy_license_bundle(DIST / name)
         archive = shutil.make_archive(
             str(DIST / name), "zip", root_dir=DIST, base_dir=name)
         print(f"完成: dist\\{name}\\{name}.exe")
         print(f"压缩: dist\\{Path(archive).name}")
     else:
         print(f"完成: dist\\{name}.exe")
+        # onefile 是单个 exe，塞不进许可文本：单独产出一个声明包，
+        # 分发时与 exe 一起提供（README「许可证」有说明）
+        bundle = DIST / f"{name}-licenses.zip"
+        _write_license_zip(bundle)
+        print(f"许可声明: dist\\{bundle.name}（分发 exe 时请一并提供）")
     return 0
 
 

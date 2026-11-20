@@ -69,9 +69,9 @@ def _parse_trello_due(raw) -> str | None:
 def board_from_trello(doc: dict) -> tuple[Board, str]:
     """Trello 导出 JSON → (Board, 报告文本)；结构不合规抛 ValueError"""
     if not isinstance(doc, dict):
-        raise ValueError("文件不是 Trello 看板导出格式")
+        raise ValueError("文件不是受支持的看板导出 JSON")
     if "lists" not in doc or "cards" not in doc:
-        raise ValueError("缺少 lists/cards 字段，不是 Trello 看板导出格式")
+        raise ValueError("缺少 lists/cards 字段，不是受支持的看板导出 JSON")
 
     board_name = str(doc.get("name", "") or "").strip()
 
